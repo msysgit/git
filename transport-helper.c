@@ -425,6 +425,8 @@ static int get_exporter(struct transport *transport,
 	for (i = 0; i < revlist_args->nr; i++)
 		fastexport->argv[argc++] = revlist_args->items[i].string;
 
+	fastexport->argv[argc++] = "--";
+
 	fastexport->git_cmd = 1;
 	return start_command(fastexport);
 }
