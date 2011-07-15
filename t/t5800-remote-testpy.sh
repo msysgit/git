@@ -146,6 +146,17 @@ test_expect_success 'push new branch with old content' '
 	compare_refs clone refs/heads/existing server refs/heads/existing
 '
 
+test_expect_failure BROKEN 'delete branch' '
+	(cd clone &&
+	 git checkout -b delete-me &&
+	 echo content >>file &&
+	 git commit -a -m eight &&
+	 git push origin delete-me
+	 git push origin :delete-me) &&
+	test_must_fail git --git-dir="server/.git" rev-parse --verify delete-me
+'
+
+
 test_expect_failure 'push new branch with old:new refspec' '
 	(cd clone &&
 	 git push origin new-name:new-refspec
