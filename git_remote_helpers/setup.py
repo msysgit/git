@@ -23,6 +23,6 @@ setup(
     url = 'http://www.git-scm.com/',
     package_dir = {'git_remote_helpers': ''},
     packages = ['git_remote_helpers', 'git_remote_helpers.git',
-                'git_remote_helpers.fastimport'],
+                'git_remote_helpers.fastimport', 'git_remote_helpers.hg'],
     cmdclass = {'build_py': build_py},
 )

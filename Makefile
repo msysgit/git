@@ -479,6 +479,7 @@ SCRIPT_PERL += git-svn.perl
 
 SCRIPT_PYTHON += git-remote-testpy.py
 SCRIPT_PYTHON += git-p4.py
+SCRIPT_PYTHON += git-remote-hg.py
 
 SCRIPTS = $(patsubst %.sh,%,$(SCRIPT_SH)) \
 	  $(patsubst %.perl,%,$(SCRIPT_PERL)) \
