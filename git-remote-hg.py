@@ -8,6 +8,7 @@ from git_remote_helpers.helper import RemoteHelper
 from git_remote_helpers.util import debug, die, warn
 from git_remote_helpers.hg import util
 from git_remote_helpers.hg.hg import GitHg
+from git_remote_helpers.hg.repo import HgRepo
 from git_remote_helpers.hg.exporter import GitExporter
 from git_remote_helpers.hg.importer import GitImporter
 from git_remote_helpers.hg.non_local import NonLocalHg
@@ -39,10 +40,14 @@ class HgRemoteHelper(RemoteHelper):
         prefix = 'refs/hg/%s/' % alias
         debug("prefix: '%s'", prefix)
 
+        # Wrap the hg.repository object
+        repo = HgRepo(repo)
+        repo.path = repo.hgrepo.path
+
         repo.marksfile = 'git.marks'
         repo.hg = hg
         repo.prefix = prefix
-        repo.revs_ = revs # must not override repo.revs()
+        repo.revs = revs
 
         self.setup_repo(repo, alias)
 
@@ -51,6 +56,9 @@ class HgRemoteHelper(RemoteHelper):
         repo.importer = GitImporter(repo)
         repo.non_local = NonLocalHg(repo)
 
+        repo.local = repo.hgrepo.local # FIXME: what about self
+
+        # FIXME: repo.is_local is unused?
         repo.is_local = not remote and repo.local()
 
         return repo
@@ -59,16 +67,18 @@ class HgRemoteHelper(RemoteHelper):
         """Returns a hg.repository object initalized for usage.
         """
 
-        local = repo.hg.repository(repo.ui, path)
+        local = repo.hg.repository(repo.hgrepo.ui, path)
+        local = HgRepo(local)
+        repo.path = repo.hgrepo.path
 
         self.setup_local_repo(local, repo)
 
         local.git_hg = repo.git_hg
         local.hg = repo.hg
-        local.revs_ = repo.revs_
+        local.revs = repo.revs
         local.exporter = GitExporter(local)
         local.importer = GitImporter(local)
-        local.is_local = repo.is_local
+        local.is_local = repo.is_local	# FIXME: unused?
 
         return local
 
@@ -76,7 +86,7 @@ class HgRemoteHelper(RemoteHelper):
         """Lists all known references.
         """
 
-        for ref in repo.revs_:
+        for ref in repo.revs:
             debug("? refs/heads/%s", ref)
             print "? refs/heads/%s" % ref
 
@@ -95,7 +105,7 @@ class HgRemoteHelper(RemoteHelper):
         return value
 
     def get_refs(self, repo, gitdir):
-        return repo.branchmap()
+        return repo.hgrepo.branchmap()
 
 if __name__ == '__main__':
     sys.exit(HgRemoteHelper().main(sys.argv))

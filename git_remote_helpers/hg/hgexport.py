@@ -226,7 +226,7 @@ class HgExportGenerator(object):
         return True
 
     def export_branch(self, name, rev):
-        ctx = self.repo.changectx(rev)
+        ctx = self.repo.hgrepo.changectx(rev)
         nodesha = ctx.node()
         hash = self.tohex(nodesha)
         idnum = self.mapping[hash]
@@ -241,8 +241,8 @@ class HgExportGenerator(object):
 
         exported = printed = False
 
-        for rev in self.repo.changelog:
-            ctx = self.repo.changectx(rev)
+        for rev in self.repo.hgrepo.changelog:
+            ctx = self.repo.hgrepo.changectx(rev)
             exported = self.export_revision(ctx) or exported
 
             if (exported and not printed) or (exported and rev%1000 == 0):

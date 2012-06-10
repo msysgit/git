@@ -17,13 +17,13 @@ class NonLocalHg(object):
         if not os.path.exists(path):
             os.makedirs(path)
 
-        if self.repo.path.endswith(".hg"):
-            from_path = self.repo.path[:-3]
+        if self.repo.hgrepo.path.endswith(".hg"):
+            from_path = self.repo.hgrepo.path[:-3]
         else:
-            from_path = self.repo.path
+            from_path = self.repo.hgrepo.path
 
-        self.repo.ui.setconfig('ui', 'quiet', "true")
-        self.hg.clone(self.repo.ui, {}, from_path, path, update=False, pull=True)
+        self.repo.hgrepo.ui.setconfig('ui', 'quiet', "true")
+        self.hg.clone(self.repo.hgrepo.ui, {}, from_path, path, update=False, pull=True)
 
         return path
 
@@ -33,10 +33,10 @@ class NonLocalHg(object):
         if not os.path.exists(path):
             die("could not find repo at %s", path)
 
-        repo = self.hg.repository(self.repo.ui, path)
+        repo = self.hg.repository(self.repo.hgrepo.ui, path)
 
         repo.ui.setconfig('ui', 'quiet', "true")
-        repo.pull(self.repo, heads=self.repo.heads(), force=True)
+        repo.pull(self.repo.hgrepo, heads=self.repo.hgrepo.heads(), force=True)
 
     def push(self, base):
         path = self.repo.get_base_path(base)
@@ -44,8 +44,8 @@ class NonLocalHg(object):
         if not os.path.exists(path):
             die("could not find repo at %s", path)
 
-        repo = self.hg.repository(self.repo.ui, path)
+        repo = self.hg.repository(self.repo.hgrepo.ui, path)
 
-        self.repo.ui.setconfig('ui', 'quiet', "true")
+        self.repo.hgrepo.ui.setconfig('ui', 'quiet', "true")
         repo.ui.setconfig('ui', 'quiet', "true")
-        repo.push(self.repo, force=False)
+        repo.push(self.repo.hgrepo, force=False)

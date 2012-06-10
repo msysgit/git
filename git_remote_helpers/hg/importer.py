@@ -17,7 +17,7 @@ class GitImporter(object):
         if not os.path.exists(dirname):
             os.makedirs(dirname)
 
-        procc = hgimport.HgImportProcessor(self.repo.ui, self.repo)
+        procc = hgimport.HgImportProcessor(self.repo.hgrepo.ui, self.repo.hgrepo)
 
         marks_file = os.path.abspath(os.path.join(dirname, 'hg.marks'))
 
