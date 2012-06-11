@@ -17,13 +17,8 @@ class NonLocalHg(object):
         if not os.path.exists(path):
             os.makedirs(path)
 
-        if self.repo.hgrepo.path.endswith(".hg"):
-            from_path = self.repo.hgrepo.path[:-3]
-        else:
-            from_path = self.repo.hgrepo.path
-
         self.repo.hgrepo.ui.setconfig('ui', 'quiet', "true")
-        self.hg.clone(self.repo.hgrepo.ui, {}, from_path, path, update=False, pull=True)
+        self.hg.clone(self.repo.hgrepo.ui, {}, self.repo.hgrepo, path, update=False, pull=True)
 
         return path
 
