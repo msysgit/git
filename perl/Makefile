@@ -24,17 +24,20 @@ ifdef NO_PERL_MAKEMAKER
 instdir_SQ = $(subst ','\'',$(prefix)/lib)
 $(makfile): ../GIT-CFLAGS Makefile
 	echo all: private-Error.pm Git.pm Git/I18N.pm > $@
-	echo '	mkdir -p blib/lib/Git' >> $@
+	echo '	mkdir -p blib/lib/Git/SVN' >> $@
 	echo '	$(RM) blib/lib/Git.pm; cp Git.pm blib/lib/' >> $@
 	echo '	$(RM) blib/lib/Git/I18N.pm; cp Git/I18N.pm blib/lib/Git/' >> $@
+	echo '	$(RM) blib/lib/Git/SVN/Fetcher.pm; cp Git/SVN/Fetcher.pm blib/lib/Git/SVN' >> $@
+	echo '	$(RM) blib/lib/Git/SVN/Prompt.pm; cp Git/SVN/Prompt.pm blib/lib/Git/SVN' >> $@
 	echo '	$(RM) blib/lib/Error.pm' >> $@
 	'$(PERL_PATH_SQ)' -MError -e 'exit($$Error::VERSION < 0.15009)' || \
 	echo '	cp private-Error.pm blib/lib/Error.pm' >> $@
 	echo install: >> $@
-	echo '	mkdir -p "$$(DESTDIR)$(instdir_SQ)"' >> $@
-	echo '	mkdir -p "$$(DESTDIR)$(instdir_SQ)/Git"' >> $@
+	echo '	mkdir -p "$$(DESTDIR)$(instdir_SQ)/Git/SVN"' >> $@
 	echo '	$(RM) "$$(DESTDIR)$(instdir_SQ)/Git.pm"; cp Git.pm "$$(DESTDIR)$(instdir_SQ)"' >> $@
 	echo '	$(RM) "$$(DESTDIR)$(instdir_SQ)/Git/I18N.pm"; cp Git/I18N.pm "$$(DESTDIR)$(instdir_SQ)/Git"' >> $@
+	echo '	$(RM) "$$(DESTDIR)$(instdir_SQ)/Git/SVN/Fetcher.pm"; cp Git/SVN/Fetcher.pm "$$(DESTDIR)$(instdir_SQ)/Git/SVN"' >> $@
+	echo '	$(RM) "$$(DESTDIR)$(instdir_SQ)/Git/SVN/Prompt.pm"; cp Git/SVN/Prompt.pm "$$(DESTDIR)$(instdir_SQ)/Git/SVN"' >> $@
 	echo '	$(RM) "$$(DESTDIR)$(instdir_SQ)/Error.pm"' >> $@
 	'$(PERL_PATH_SQ)' -MError -e 'exit($$Error::VERSION < 0.15009)' || \
 	echo '	cp private-Error.pm "$$(DESTDIR)$(instdir_SQ)/Error.pm"' >> $@
