@@ -505,6 +505,13 @@ sub cmd_clone {
 		$path = $url;
 	}
 	$path = basename($url) if !defined $path || !length $path;
+
+	# On MSYS, convert a Windows-style path to an MSYS-style path
+	# so that rel2abs() below works correctly.
+	if ($_authors && $^O eq 'msys') {
+		$_authors =~ s#^([[:alpha:]]):/#/$1/#;
+	}
+
 	my $authors_absolute = $_authors ? File::Spec->rel2abs($_authors) : "";
 	cmd_init($url, $path);
 	command_oneline('config', 'svn.authorsfile', $authors_absolute)
