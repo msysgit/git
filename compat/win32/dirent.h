@@ -1,6 +1,8 @@
 #ifndef DIRENT_H
 #define DIRENT_H
 
+#ifndef USE_FSCACHE
+
 typedef struct DIR DIR;
 
 #define DT_UNKNOWN 0
@@ -17,4 +19,5 @@ DIR *opendir(const char *dirname);
 struct dirent *readdir(DIR *dir);
 int closedir(DIR *dir);
 
+#endif /* USE_FSCACHE */
 #endif /* DIRENT_H */
