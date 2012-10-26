@@ -2061,6 +2061,26 @@ static char *wcstoutfdup_startup(char *buffer, const wchar_t *wcs, size_t len)
 	return memcpy(malloc_startup(len), buffer, len);
 }
 
+#define GIT_TRACE_PERFORMANCE "GIT_TRACE_PERFORMANCE"
+
+static LARGE_INTEGER start_time;
+
+static void trace_performance(void)
+{
+	struct strbuf str;
+	LARGE_INTEGER end_time, freq;
+	double time;
+	QueryPerformanceCounter(&end_time);
+	QueryPerformanceFrequency(&freq);
+	time = end_time.QuadPart - start_time.QuadPart;
+	time /= freq.QuadPart;
+	strbuf_init(&str, 0);
+	strbuf_addf(&str, "trace: time: %.6f s, command: %s\n", time,
+			GetCommandLineA());
+	trace_strbuf(GIT_TRACE_PERFORMANCE, &str);
+	strbuf_release(&str);
+}
+
 void mingw_startup()
 {
 	int i, maxlen, argc;
@@ -2131,4 +2151,10 @@ void mingw_startup()
 
 	/* initialize Unicode console */
 	winansi_init();
+
+	/* enable performance logging of each git command */
+	if (trace_want(GIT_TRACE_PERFORMANCE)) {
+		QueryPerformanceCounter(&start_time);
+		atexit(trace_performance);
+	}
 }
