@@ -2219,3 +2219,20 @@ void mingw_startup()
 	/* initialize Unicode console */
 	winansi_init();
 }
+
+/*
+ * Returns seconds since system start in very high resolution (CPU clock).
+ */
+double ticks()
+{
+	static double frequency = -1;
+	LARGE_INTEGER li;
+	if (frequency < 0) {
+		if (!QueryPerformanceFrequency(&li))
+			return 0.0;
+		frequency = li.QuadPart;
+	}
+	if (!QueryPerformanceCounter(&li))
+		return 0.0;
+	return ((double) li.QuadPart) / frequency;
+}
