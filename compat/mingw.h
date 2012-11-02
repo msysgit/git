@@ -475,3 +475,23 @@ extern const char *get_windows_home_directory();
 #define get_home_directory() get_windows_home_directory()
 
 extern double ticks();
+
+#define GIT_TRACE_PERFORMANCE "GIT_TRACE_PERFORMANCE"
+
+extern double trace_performance_file_line(const char *file, int lineno,
+	double t, const char *fmt, ...);
+
+/*
+ * Print (absolute) time to GIT_TRACE_PERFORMANCE file if enabled.
+ * Returns current ticks().
+ */
+#define trace_performance(time, ...) \
+	trace_performance_file_line(__FILE__, __LINE__, time, __VA_ARGS__)
+
+/*
+ * Print time since 'start' to GIT_TRACE_PERFORMANCE file if enabled.
+ * Returns current ticks().
+ */
+#define trace_performance_since(start, ...) \
+	trace_performance_file_line(__FILE__, __LINE__, ticks() - (start), \
+	__VA_ARGS__)

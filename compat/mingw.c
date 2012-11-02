@@ -2236,3 +2236,32 @@ double ticks()
 		return 0.0;
 	return ((double) li.QuadPart) / frequency;
 }
+
+/*
+ * Prints performance data if environment variable GIT_TRACE_PERFORMANCE points
+ * to a valid file name, otherwise a NOOP.
+ * Returns the current ticks() (without the formatting and printing).
+ */
+__attribute__((format (printf, 4, 5)))
+double trace_performance_file_line(const char *file, int lineno, double t,
+	const char *fmt, ...)
+{
+	struct strbuf buf = STRBUF_INIT;
+	va_list args;
+	if (!trace_want(GIT_TRACE_PERFORMANCE))
+		return 0.0;
+
+	strbuf_addf(&buf, "trace: at %s:%i, time: %g s", file, lineno, t);
+
+	if (fmt && *fmt) {
+		strbuf_addstr(&buf, ": ");
+		va_start(args, fmt);
+		strbuf_vaddf(&buf, fmt, args);
+		va_end(args);
+	}
+	strbuf_addch(&buf, '\n');
+
+	trace_strbuf(GIT_TRACE_PERFORMANCE, &buf);
+	strbuf_release(&buf);
+	return ticks();
+}
