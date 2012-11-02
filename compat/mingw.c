@@ -2132,3 +2132,55 @@ void mingw_startup()
 	/* initialize Unicode console */
 	winansi_init();
 }
+
+static double LARGE_INTEGER_to_double(DWORD low, LONG high)
+{
+	const double twoToThePowerOf32 = 4294967296.0; /* 2^32 */
+	return (double)(low) + (double)(high) * twoToThePowerOf32;
+}
+
+#ifdef __GNUC__
+__attribute__((format (printf, 4, 5)))
+#endif
+double measure_time_aux(const char *file, int lineno, double threshold,
+			const char *fmt, ...)
+{
+	va_list ap;
+	static LARGE_INTEGER last;
+	LARGE_INTEGER current;
+	DWORD diffLow;
+	LONG diffHigh;
+	double frequency = -1, diff;
+
+	if (frequency < 0) {
+		LARGE_INTEGER f;
+		if(QueryPerformanceFrequency(&f) == FALSE)
+			return 0.0;
+		frequency =  LARGE_INTEGER_to_double(f.LowPart, f.HighPart);
+	}
+
+	if (QueryPerformanceCounter(&current) == FALSE)
+		return 0.0;
+
+	if (!last.LowPart) {
+		last = current;
+		return 0.0;
+	}
+
+	diffLow = current.LowPart - last.LowPart;
+	diffHigh = current.HighPart - last.HighPart;
+	last = current;
+	diff = LARGE_INTEGER_to_double(diffLow, diffHigh) / frequency;
+
+	if (diff < threshold)
+		return diff;
+
+	fprintf(stderr, "%s:%d ", file, lineno);
+
+	va_start(ap, fmt);
+	vfprintf(stderr, fmt, ap);
+	va_end(ap);
+
+	fprintf(stderr, ": %f\n", diff);
+	return diff;
+}
