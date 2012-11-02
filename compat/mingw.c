@@ -2148,6 +2148,13 @@ static char *wcstoutfdup_startup(char *buffer, const wchar_t *wcs, size_t len)
 	return memcpy(malloc_startup(len), buffer, len);
 }
 
+static double start_time;
+
+static void trace_total_performance(void)
+{
+	trace_performance_since(start_time, "command: %s", GetCommandLineA());
+}
+
 void mingw_startup()
 {
 	int i, maxlen, argc;
@@ -2218,6 +2225,12 @@ void mingw_startup()
 
 	/* initialize Unicode console */
 	winansi_init();
+
+	/* enable performance logging of each git command */
+	if (trace_want(GIT_TRACE_PERFORMANCE)) {
+		start_time = ticks();
+		atexit(trace_total_performance);
+	}
 }
 
 /*
