@@ -90,8 +90,6 @@
 #define WIN32_LEAN_AND_MEAN  /* stops windows.h including winsock.h */
 #include <winsock2.h>
 #include <windows.h>
-#include "compat/winsock-proc.h"
-#include "compat/win-fd.h"
 #endif
 
 #include <unistd.h>
@@ -170,6 +168,12 @@ typedef unsigned long uintptr_t;
 #define _ALL_SOURCE 1
 #endif
 #endif
+
+#ifdef WIN32 /* Both MinGW and MSVC */
+#include "compat/winsock-proc.h"
+#include "compat/win-fd.h"
+#endif
+
 
 /* used on Mac OS X */
 #ifdef PRECOMPOSE_UNICODE
