@@ -169,6 +169,12 @@ typedef unsigned long uintptr_t;
 #endif
 #endif
 
+#ifdef WIN32 /* Both MinGW and MSVC */
+#include "compat/winsock-proc.h"
+#include "compat/win-fd.h"
+#endif
+
+
 /* used on Mac OS X */
 #ifdef PRECOMPOSE_UNICODE
 #include "compat/precompose_utf8.h"

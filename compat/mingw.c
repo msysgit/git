@@ -9,6 +9,7 @@
 static const int delay[] = { 0, 1, 10, 20, 40 };
 unsigned int _CRT_fmode = _O_BINARY;
 
+
 int err_win_to_posix(DWORD winerr)
 {
 	int error = ENOSYS;
@@ -1471,6 +1472,7 @@ static void socket_cleanup(void)
 	ipv6_getnameinfo = getnameinfo_stub;
 }
 
+
 static void ensure_socket_initialization(void)
 {
 	WSADATA wsa;
@@ -1514,6 +1516,9 @@ static void ensure_socket_initialization(void)
 
 	atexit(socket_cleanup);
 	initialized = 1;
+}
+void mingw_ensure_socket_initialization(void) {
+	ensure_socket_initialization();
 }
 
 #undef gethostname

@@ -18,7 +18,7 @@
 #include "refs.h"
 #include "streaming.h"
 #include "thread-utils.h"
-
+#include "socket-utils.h"
 static const char *pack_usage[] = {
 	N_("git pack-objects --stdout [options...] [< ref-list | < object-list]"),
 	N_("git pack-objects [options...] base-name [< ref-list | < object-list]"),
@@ -811,7 +811,6 @@ static void write_pack_file(void)
 		die("wrote %"PRIu32" objects while expecting %"PRIu32,
 			written, nr_result);
 }
-
 static int locate_object_entry_hash(const unsigned char *sha1)
 {
 	int i;
@@ -2433,7 +2432,6 @@ static int option_parse_ulong(const struct option *opt,
 #define OPT_ULONG(s, l, v, h) \
 	{ OPTION_CALLBACK, (s), (l), (v), "n", (h),	\
 	  PARSE_OPT_NONEG, option_parse_ulong }
-
 int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 {
 	int use_internal_rev_list = 0;
@@ -2598,5 +2596,12 @@ int cmd_pack_objects(int argc, const char **argv, const char *prefix)
 		fprintf(stderr, "Total %"PRIu32" (delta %"PRIu32"),"
 			" reused %"PRIu32" (delta %"PRIu32")\n",
 			written, written_delta, reused, reused_delta);
+#ifdef EMULATE_TIME_WAIT_SOCKET
+
+	
+	if (pack_to_stdout && is_socket(1)) {
+		set_socket_to_time_wait(1, 1);
+	}
+#endif
 	return 0;
 }

@@ -1,0 +1,37 @@
+git-close-socket(1)
+===================
+
+NAME
+----
+git-close-socket - Close socket like Linux.
+
+
+SYNOPSIS
+--------
+[verse]
+'git close-socket' 
+
+DESCRIPTION
+-----------
+
+Emulate to close socket as Linux. Some system, especialy windows, will close
+soket immediately. In such system git daemon will not communicate some git 
+clients well.
+This command resovle the problem. Command will sleep some secondes and exit. 
+Sleep seconds is specified below order.
+
+Windows::
+	1. 'git-config --int win.sock.time.wait'
+	2. half of registry value 'HKLM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\TcpTimedWaitDelay'
+	3. 240
+
+
+SEE ALSO
+--------
+http://www.softlab.ntua.gr/facilities/documentation/unix/unix-socket-faq/unix-socket-faq-4.html#ss4.2
+http://msdn.microsoft.com/en-us/library/windows/desktop/ms737582.asp
+linkgit:git-config[1]
+
+GIT
+---
+Part of the linkgit:git[1] suite

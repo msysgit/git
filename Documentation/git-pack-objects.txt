@@ -224,6 +224,10 @@ So does `git bundle` (see linkgit:git-bundle[1]) when it creates a bundle.
 	With this option, parents that are hidden by grafts are packed
 	nevertheless.
 
+--shutdown-out-socket::
+	On exit, shutdown outgoing socket if outgoing file descript is 
+	socket.
+
 SEE ALSO
 --------
 linkgit:git-rev-list[1]

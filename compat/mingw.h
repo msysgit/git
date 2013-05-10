@@ -467,3 +467,7 @@ extern int err_win_to_posix(DWORD winerr);
 
 extern const char *get_windows_home_directory();
 #define get_home_directory() get_windows_home_directory()
+
+#define EMULATE_TIME_WAIT_SOCKET
+extern void mingw_ensure_socket_initialization();
+

@@ -45,6 +45,7 @@ int start_command(struct child_process *);
 int finish_command(struct child_process *);
 int run_command(struct child_process *);
 
+
 extern int run_hook(const char *index_file, const char *name, ...);
 
 #define RUN_COMMAND_NO_STDIN 1
@@ -90,5 +91,6 @@ struct async {
 
 int start_async(struct async *async);
 int finish_async(struct async *async);
+
 
 #endif

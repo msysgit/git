@@ -504,6 +504,7 @@ PROGRAM_OBJS += shell.o
 PROGRAM_OBJS += show-index.o
 PROGRAM_OBJS += upload-pack.o
 PROGRAM_OBJS += remote-testsvn.o
+PROGRAM_OBJS += close-socket.o
 
 # Binary suffix, set to .exe for Windows builds
 X =
@@ -532,7 +533,7 @@ TEST_PROGRAMS_NEED_X += test-sigchain
 TEST_PROGRAMS_NEED_X += test-string-list
 TEST_PROGRAMS_NEED_X += test-subprocess
 TEST_PROGRAMS_NEED_X += test-svn-fe
-
+TEST_PROGRAMS_NEED_X += test-env-utils
 TEST_PROGRAMS = $(patsubst %,%$X,$(TEST_PROGRAMS_NEED_X))
 
 # List built-in command $C whose implementation cmd_$C() is not in
@@ -630,6 +631,9 @@ LIB_H += compat/terminal.h
 LIB_H += compat/win32/dirent.h
 LIB_H += compat/win32/pthread.h
 LIB_H += compat/win32/syslog.h
+LIB_H += compat/winsock-proc.h
+LIB_H += compat/winsock-utils.h
+LIB_H += compat/win-fd.h
 LIB_H += connected.h
 LIB_H += convert.h
 LIB_H += credential.h
@@ -639,6 +643,7 @@ LIB_H += delta.h
 LIB_H += diff.h
 LIB_H += diffcore.h
 LIB_H += dir.h
+LIB_H += evn-utils.h
 LIB_H += exec_cmd.h
 LIB_H += fetch-pack.h
 LIB_H += fmt-merge-msg.h
@@ -688,6 +693,7 @@ LIB_H += sha1-lookup.h
 LIB_H += shortlog.h
 LIB_H += sideband.h
 LIB_H += sigchain.h
+LIB_H += socket-utils.h
 LIB_H += strbuf.h
 LIB_H += streaming.h
 LIB_H += string-list.h
@@ -753,6 +759,7 @@ LIB_OBJS += dir.o
 LIB_OBJS += editor.o
 LIB_OBJS += entry.o
 LIB_OBJS += environment.o
+LIB_OBJS += env-utils.o
 LIB_OBJS += exec_cmd.o
 LIB_OBJS += fetch-pack.o
 LIB_OBJS += fsck.o
@@ -818,6 +825,7 @@ LIB_OBJS += sha1_name.o
 LIB_OBJS += shallow.o
 LIB_OBJS += sideband.o
 LIB_OBJS += sigchain.o
+LIB_OBJS += socket-utils.o
 LIB_OBJS += strbuf.o
 LIB_OBJS += streaming.o
 LIB_OBJS += string-list.o
@@ -1292,7 +1300,7 @@ ifeq ($(uname_S),Windows)
 	BASIC_CFLAGS = -nologo -I. -I../zlib -Icompat/vcbuild -Icompat/vcbuild/include -DWIN32 -D_CONSOLE -DHAVE_STRING_H -D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE
 	COMPAT_OBJS = compat/msvc.o compat/winansi.o \
 		compat/win32/pthread.o compat/win32/syslog.o \
-		compat/win32/dirent.o
+		compat/win32/dirent.o 
 	COMPAT_CFLAGS = -D__USE_MINGW_ACCESS -DNOGDI -DHAVE_STRING_H -DHAVE_ALLOCA_H -Icompat -Icompat/regex -Icompat/win32 -DSTRIP_EXTENSION=\".exe\"
 	BASIC_LDFLAGS = -IGNORE:4217 -IGNORE:4049 -NOLOGO -SUBSYSTEM:CONSOLE
 	EXTLIBS = user32.lib advapi32.lib shell32.lib wininet.lib ws2_32.lib
@@ -1441,12 +1449,15 @@ ifneq (,$(findstring MINGW,$(uname_S)))
 	COMPAT_CFLAGS += -DSTRIP_EXTENSION=\".exe\"
 	COMPAT_OBJS += compat/mingw.o compat/winansi.o \
 		compat/win32/pthread.o compat/win32/syslog.o \
-		compat/win32/dirent.o
+		compat/win32/dirent.o compat/winsock-proc.o \
+		compat/win-fd.o compat/winsock-utils.o
 	BASIC_LDFLAGS += -Wl,--large-address-aware
 	EXTLIBS += -lws2_32
 	GITLIBS += git.res
 	PTHREAD_LIBS =
 	RC = windres -O coff
+	TEST_PROGRAMS_NEED_X += test-win-fd
+	TEST_PROGRAMS_NEED_X += test-winsock-utils
 	X = .exe
 	SPARSE_FLAGS = -Wno-one-bit-signed-bitfield
 ifneq (,$(wildcard ../THIS_IS_MSYSGIT))
