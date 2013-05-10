@@ -9,7 +9,7 @@ git-upload-pack - Send objects packed back to git-fetch-pack
 SYNOPSIS
 --------
 [verse]
-'git-upload-pack' [--strict] [--timeout=<n>]  [--shutdown-out-soket] <directory>
+'git-upload-pack' [--strict] [--timeout=<n>] <directory>
 
 DESCRIPTION
 -----------
@@ -30,9 +30,6 @@ OPTIONS
 
 --timeout=<n>::
 	Interrupt transfer after <n> seconds of inactivity.
-
---shutdown-out-socket::
-	Shutdown outgoing file descripter, if file descripter is socket.
 
 <directory>::
 	The repository to sync from.
