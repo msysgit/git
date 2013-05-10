@@ -1449,10 +1449,8 @@ ifneq (,$(findstring MINGW,$(uname_S)))
 	COMPAT_CFLAGS += -DSTRIP_EXTENSION=\".exe\"
 	COMPAT_OBJS += compat/mingw.o compat/winansi.o \
 		compat/win32/pthread.o compat/win32/syslog.o \
-		compat/win32/dirent.o \
-		compat/winsock-proc.o \
-		compat/win-fd.o \
-		compat/winsock-utils.o
+		compat/win32/dirent.o compat/winsock-proc.o \
+		compat/win-fd.o compat/winsock-utils.o
 	BASIC_LDFLAGS += -Wl,--large-address-aware
 	EXTLIBS += -lws2_32
 	GITLIBS += git.res
