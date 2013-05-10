@@ -6,10 +6,6 @@
 #include "string-list.h"
 #include "socket-utils.h"
 #include "env-utils.h"
-#if WIN32
-#include "winsock-proc.h"
-#include "win-fd.h"
-#endif
 
 #ifndef HOST_NAME_MAX
 #define HOST_NAME_MAX 256

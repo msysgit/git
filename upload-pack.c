@@ -13,7 +13,7 @@
 #include "sigchain.h"
 #include "version.h"
 #include "socket-utils.h"
-#include "winsock-proc.h"
+
 static const char upload_pack_usage[] = "git upload-pack [--strict] [--timeout=<n>] <dir>";
 
 /* bits #0..7 in revision.h, #8..10 in commit.c */
