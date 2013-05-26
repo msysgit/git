@@ -463,12 +463,21 @@ static void clear_commit_marks_1(struct commit_list **plist,
 	}
 }
 
-void clear_commit_marks(struct commit *commit, unsigned int mark)
+void clear_commit_marks_many(int nr, struct commit **commit, unsigned int mark)
 {
 	struct commit_list *list = NULL;
-	commit_list_insert(commit, &list);
+
+	while (nr--) {
+		commit_list_insert(*commit, &list);
+		commit++;
+	}
 	while (list)
 		clear_commit_marks_1(&list, pop_commit(&list), mark);
+}
+
+void clear_commit_marks(struct commit *commit, unsigned int mark)
+{
+	clear_commit_marks_many(1, &commit, mark);
 }
 
 void clear_commit_marks_for_object_array(struct object_array *a, unsigned mark)
@@ -797,8 +806,7 @@ struct commit_list *get_merge_bases_many(struct commit *one,
 	if (!result || !result->next) {
 		if (cleanup) {
 			clear_commit_marks(one, all_flags);
-			for (i = 0; i < n; i++)
-				clear_commit_marks(twos[i], all_flags);
+			clear_commit_marks_many(n, twos, all_flags);
 		}
 		return result;
 	}
@@ -816,8 +824,7 @@ struct commit_list *get_merge_bases_many(struct commit *one,
 	free_commit_list(result);
 
 	clear_commit_marks(one, all_flags);
-	for (i = 0; i < n; i++)
-		clear_commit_marks(twos[i], all_flags);
+	clear_commit_marks_many(n, twos, all_flags);
 
 	cnt = remove_redundant(rslt, cnt);
 	result = NULL;
@@ -834,7 +841,7 @@ struct commit_list *get_merge_bases(struct commit *one, struct commit *two,
 }
 
 /*
- * Is "commit" a decendant of one of the elements on the "with_commit" list?
+ * Is "commit" a descendant of one of the elements on the "with_commit" list?
  */
 int is_descendant_of(struct commit *commit, struct commit_list *with_commit)
 {
@@ -852,23 +859,34 @@ int is_descendant_of(struct commit *commit, struct commit_list *with_commit)
 }
 
 /*
+ * Is "commit" an ancestor of one of the "references"?
+ */
+int in_merge_bases_many(struct commit *commit, int nr_reference, struct commit **reference)
+{
+	struct commit_list *bases;
+	int ret = 0, i;
+
+	if (parse_commit(commit))
+		return ret;
+	for (i = 0; i < nr_reference; i++)
+		if (parse_commit(reference[i]))
+			return ret;
+
+	bases = paint_down_to_common(commit, nr_reference, reference);
+	if (commit->object.flags & PARENT2)
+		ret = 1;
+	clear_commit_marks(commit, all_flags);
+	clear_commit_marks_many(nr_reference, reference, all_flags);
+	free_commit_list(bases);
+	return ret;
+}
+
+/*
  * Is "commit" an ancestor of (i.e. reachable from) the "reference"?
  */
 int in_merge_bases(struct commit *commit, struct commit *reference)
 {
-	struct commit_list *bases;
-	int ret = 0;
-
-	if (parse_commit(commit) || parse_commit(reference))
-		return ret;
-
-	bases = paint_down_to_common(commit, 1, &reference);
-	if (commit->object.flags & PARENT2)
-		ret = 1;
-	clear_commit_marks(commit, all_flags);
-	clear_commit_marks(reference, all_flags);
-	free_commit_list(bases);
-	return ret;
+	return in_merge_bases_many(commit, 1, &reference);
 }
 
 struct commit_list *reduce_heads(struct commit_list *heads)
@@ -1022,6 +1040,76 @@ static void handle_signed_tag(struct commit *parent, struct commit_extra_header 
 free_return:
 	free(buf);
 }
+
+static struct {
+	char result;
+	const char *check;
+} sigcheck_gpg_status[] = {
+	{ 'G', "\n[GNUPG:] GOODSIG " },
+	{ 'B', "\n[GNUPG:] BADSIG " },
+	{ 'U', "\n[GNUPG:] TRUST_NEVER" },
+	{ 'U', "\n[GNUPG:] TRUST_UNDEFINED" },
+};
+
+static void parse_gpg_output(struct signature_check *sigc)
+{
+	const char *buf = sigc->gpg_status;
+	int i;
+
+	/* Iterate over all search strings */
+	for (i = 0; i < ARRAY_SIZE(sigcheck_gpg_status); i++) {
+		const char *found, *next;
+
+		if (!prefixcmp(buf, sigcheck_gpg_status[i].check + 1)) {
+			/* At the very beginning of the buffer */
+			found = buf + strlen(sigcheck_gpg_status[i].check + 1);
+		} else {
+			found = strstr(buf, sigcheck_gpg_status[i].check);
+			if (!found)
+				continue;
+			found += strlen(sigcheck_gpg_status[i].check);
+		}
+		sigc->result = sigcheck_gpg_status[i].result;
+		/* The trust messages are not followed by key/signer information */
+		if (sigc->result != 'U') {
+			sigc->key = xmemdupz(found, 16);
+			found += 17;
+			next = strchrnul(found, '\n');
+			sigc->signer = xmemdupz(found, next - found);
+		}
+	}
+}
+
+void check_commit_signature(const struct commit* commit, struct signature_check *sigc)
+{
+	struct strbuf payload = STRBUF_INIT;
+	struct strbuf signature = STRBUF_INIT;
+	struct strbuf gpg_output = STRBUF_INIT;
+	struct strbuf gpg_status = STRBUF_INIT;
+	int status;
+
+	sigc->result = 'N';
+
+	if (parse_signed_commit(commit->object.sha1,
+				&payload, &signature) <= 0)
+		goto out;
+	status = verify_signed_buffer(payload.buf, payload.len,
+				      signature.buf, signature.len,
+				      &gpg_output, &gpg_status);
+	if (status && !gpg_output.len)
+		goto out;
+	sigc->gpg_output = strbuf_detach(&gpg_output, NULL);
+	sigc->gpg_status = strbuf_detach(&gpg_status, NULL);
+	parse_gpg_output(sigc);
+
+ out:
+	strbuf_release(&gpg_status);
+	strbuf_release(&gpg_output);
+	strbuf_release(&payload);
+	strbuf_release(&signature);
+}
+
+
 
 void append_merge_tag_headers(struct commit_list *parents,
 			      struct commit_extra_header ***tail)

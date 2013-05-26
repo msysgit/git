@@ -3,14 +3,8 @@
 test_description='git archive --format=zip test'
 
 . ./test-lib.sh
-GIT_UNZIP=${GIT_UNZIP:-unzip}
 
 SUBSTFORMAT=%H%n
-
-test_lazy_prereq UNZIP '
-	"$GIT_UNZIP" -v
-	test $? -ne 127
-'
 
 test_lazy_prereq UNZIP_SYMLINKS '
 	(
@@ -75,6 +69,12 @@ test_expect_success \
      echo $treeid >treeid &&
      git update-ref HEAD $(TZ=GMT GIT_COMMITTER_DATE="2005-05-27 22:00:00" \
      git commit-tree $treeid </dev/null)'
+
+test_expect_success 'setup export-subst' '
+	echo "substfile?" export-subst >>.git/info/attributes &&
+	git log --max-count=1 "--pretty=format:A${SUBSTFORMAT}O" HEAD \
+		>a/substfile1
+'
 
 test_expect_success \
     'create bare clone' \

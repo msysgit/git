@@ -5,7 +5,7 @@
 #		     Grenoble INP Ensimag
 #
 
-test_description='git status advices'
+test_description='git status advice'
 
 . ./test-lib.sh
 
@@ -14,6 +14,7 @@ test_description='git status advices'
 set_fake_editor
 
 test_expect_success 'prepare for conflicts' '
+	git config --global advice.statusuoption false &&
 	test_commit init main.txt init &&
 	git branch conflicts &&
 	test_commit on_master main.txt on_master &&
@@ -73,10 +74,11 @@ test_expect_success 'prepare for rebase conflicts' '
 
 test_expect_success 'status when rebase in progress before resolving conflicts' '
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD^^) &&
 	test_must_fail git rebase HEAD^ --onto HEAD^^ &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently rebasing.
+	cat >expected <<-EOF &&
+	# HEAD detached at $ONTO
+	# You are currently rebasing branch '\''rebase_conflicts'\'' on '\''$ONTO'\''.
 	#   (fix conflicts and then run "git rebase --continue")
 	#   (use "git rebase --skip" to skip this patch)
 	#   (use "git rebase --abort" to check out the original branch)
@@ -97,12 +99,13 @@ test_expect_success 'status when rebase in progress before resolving conflicts' 
 test_expect_success 'status when rebase in progress before rebase --continue' '
 	git reset --hard rebase_conflicts &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD^^) &&
 	test_must_fail git rebase HEAD^ --onto HEAD^^ &&
 	echo three >main.txt &&
 	git add main.txt &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently rebasing.
+	cat >expected <<-EOF &&
+	# HEAD detached at $ONTO
+	# You are currently rebasing branch '\''rebase_conflicts'\'' on '\''$ONTO'\''.
 	#   (all conflicts fixed: run "git rebase --continue")
 	#
 	# Changes to be committed:
@@ -130,10 +133,11 @@ test_expect_success 'prepare for rebase_i_conflicts' '
 
 test_expect_success 'status during rebase -i when conflicts unresolved' '
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short rebase_i_conflicts) &&
 	test_must_fail git rebase -i rebase_i_conflicts &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently rebasing.
+	cat >expected <<-EOF &&
+	# HEAD detached at $ONTO
+	# You are currently rebasing branch '\''rebase_i_conflicts_second'\'' on '\''$ONTO'\''.
 	#   (fix conflicts and then run "git rebase --continue")
 	#   (use "git rebase --skip" to skip this patch)
 	#   (use "git rebase --abort" to check out the original branch)
@@ -154,11 +158,12 @@ test_expect_success 'status during rebase -i when conflicts unresolved' '
 test_expect_success 'status during rebase -i after resolving conflicts' '
 	git reset --hard rebase_i_conflicts_second &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short rebase_i_conflicts) &&
 	test_must_fail git rebase -i rebase_i_conflicts &&
 	git add main.txt &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently rebasing.
+	cat >expected <<-EOF &&
+	# HEAD detached at $ONTO
+	# You are currently rebasing branch '\''rebase_i_conflicts_second'\'' on '\''$ONTO'\''.
 	#   (all conflicts fixed: run "git rebase --continue")
 	#
 	# Changes to be committed:
@@ -182,10 +187,12 @@ test_expect_success 'status when rebasing -i in edit mode' '
 	FAKE_LINES="1 edit 2" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~2) &&
+	TGT=$(git rev-parse --short two_rebase_i) &&
 	git rebase -i HEAD~2 &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently editing a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $TGT
+	# You are currently editing a commit while rebasing branch '\''rebase_i_edit'\'' on '\''$ONTO'\''.
 	#   (use "git commit --amend" to amend the current commit)
 	#   (use "git rebase --continue" once you are satisfied with your changes)
 	#
@@ -206,11 +213,13 @@ test_expect_success 'status when splitting a commit' '
 	FAKE_LINES="1 edit 2 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
 	git rebase -i HEAD~3 &&
 	git reset HEAD^ &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently splitting a commit during a rebase.
+	TGT=$(git rev-parse --short HEAD) &&
+	cat >expected <<-EOF &&
+	# HEAD detached at $TGT
+	# You are currently splitting a commit while rebasing branch '\''split_commit'\'' on '\''$ONTO'\''.
 	#   (Once your working directory is clean, run "git rebase --continue")
 	#
 	# Changes not staged for commit:
@@ -236,11 +245,13 @@ test_expect_success 'status after editing the last commit with --amend during a 
 	FAKE_LINES="1 2 edit 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
+	TGT=$(git rev-parse --short three_amend) &&
 	git rebase -i HEAD~3 &&
 	git commit --amend -m "foo" &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently editing a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $TGT
+	# You are currently editing a commit while rebasing branch '\''amend_last'\'' on '\''$ONTO'\''.
 	#   (use "git commit --amend" to amend the current commit)
 	#   (use "git rebase --continue" once you are satisfied with your changes)
 	#
@@ -265,11 +276,12 @@ test_expect_success 'status: (continue first edit) second edit' '
 	FAKE_LINES="edit 1 edit 2 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
 	git rebase -i HEAD~3 &&
 	git rebase --continue &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently editing a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $ONTO
+	# You are currently editing a commit while rebasing branch '\''several_edits'\'' on '\''$ONTO'\''.
 	#   (use "git commit --amend" to amend the current commit)
 	#   (use "git rebase --continue" once you are satisfied with your changes)
 	#
@@ -285,12 +297,13 @@ test_expect_success 'status: (continue first edit) second edit and split' '
 	FAKE_LINES="edit 1 edit 2 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
 	git rebase -i HEAD~3 &&
 	git rebase --continue &&
 	git reset HEAD^ &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently splitting a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $ONTO
+	# You are currently splitting a commit while rebasing branch '\''several_edits'\'' on '\''$ONTO'\''.
 	#   (Once your working directory is clean, run "git rebase --continue")
 	#
 	# Changes not staged for commit:
@@ -311,12 +324,13 @@ test_expect_success 'status: (continue first edit) second edit and amend' '
 	FAKE_LINES="edit 1 edit 2 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
 	git rebase -i HEAD~3 &&
 	git rebase --continue &&
 	git commit --amend -m "foo" &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently editing a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $ONTO
+	# You are currently editing a commit while rebasing branch '\''several_edits'\'' on '\''$ONTO'\''.
 	#   (use "git commit --amend" to amend the current commit)
 	#   (use "git rebase --continue" once you are satisfied with your changes)
 	#
@@ -332,12 +346,13 @@ test_expect_success 'status: (amend first edit) second edit' '
 	FAKE_LINES="edit 1 edit 2 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
 	git rebase -i HEAD~3 &&
 	git commit --amend -m "a" &&
 	git rebase --continue &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently editing a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $ONTO
+	# You are currently editing a commit while rebasing branch '\''several_edits'\'' on '\''$ONTO'\''.
 	#   (use "git commit --amend" to amend the current commit)
 	#   (use "git rebase --continue" once you are satisfied with your changes)
 	#
@@ -353,13 +368,14 @@ test_expect_success 'status: (amend first edit) second edit and split' '
 	FAKE_LINES="edit 1 edit 2 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
 	git rebase -i HEAD~3 &&
 	git commit --amend -m "b" &&
 	git rebase --continue &&
 	git reset HEAD^ &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently splitting a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $ONTO
+	# You are currently splitting a commit while rebasing branch '\''several_edits'\'' on '\''$ONTO'\''.
 	#   (Once your working directory is clean, run "git rebase --continue")
 	#
 	# Changes not staged for commit:
@@ -380,13 +396,14 @@ test_expect_success 'status: (amend first edit) second edit and amend' '
 	FAKE_LINES="edit 1 edit 2 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
 	git rebase -i HEAD~3 &&
 	git commit --amend -m "c" &&
 	git rebase --continue &&
 	git commit --amend -m "d" &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently editing a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $ONTO
+	# You are currently editing a commit while rebasing branch '\''several_edits'\'' on '\''$ONTO'\''.
 	#   (use "git commit --amend" to amend the current commit)
 	#   (use "git rebase --continue" once you are satisfied with your changes)
 	#
@@ -402,14 +419,15 @@ test_expect_success 'status: (split first edit) second edit' '
 	FAKE_LINES="edit 1 edit 2 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
 	git rebase -i HEAD~3 &&
 	git reset HEAD^ &&
 	git add main.txt &&
 	git commit -m "e" &&
 	git rebase --continue &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently editing a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $ONTO
+	# You are currently editing a commit while rebasing branch '\''several_edits'\'' on '\''$ONTO'\''.
 	#   (use "git commit --amend" to amend the current commit)
 	#   (use "git rebase --continue" once you are satisfied with your changes)
 	#
@@ -425,15 +443,16 @@ test_expect_success 'status: (split first edit) second edit and split' '
 	FAKE_LINES="edit 1 edit 2 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
 	git rebase -i HEAD~3 &&
 	git reset HEAD^ &&
 	git add main.txt &&
 	git commit --amend -m "f" &&
 	git rebase --continue &&
 	git reset HEAD^ &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently splitting a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $ONTO
+	# You are currently splitting a commit while rebasing branch '\''several_edits'\'' on '\''$ONTO'\''.
 	#   (Once your working directory is clean, run "git rebase --continue")
 	#
 	# Changes not staged for commit:
@@ -454,15 +473,16 @@ test_expect_success 'status: (split first edit) second edit and amend' '
 	FAKE_LINES="edit 1 edit 2 3" &&
 	export FAKE_LINES &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD~3) &&
 	git rebase -i HEAD~3 &&
 	git reset HEAD^ &&
 	git add main.txt &&
 	git commit --amend -m "g" &&
 	git rebase --continue &&
 	git commit --amend -m "h" &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently editing a commit during a rebase.
+	cat >expected <<-EOF &&
+	# HEAD detached from $ONTO
+	# You are currently editing a commit while rebasing branch '\''several_edits'\'' on '\''$ONTO'\''.
 	#   (use "git commit --amend" to amend the current commit)
 	#   (use "git rebase --continue" once you are satisfied with your changes)
 	#
@@ -556,9 +576,10 @@ test_expect_success 'status when bisecting' '
 	git bisect start &&
 	git bisect bad &&
 	git bisect good one_bisect &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently bisecting.
+	TGT=$(git rev-parse --short two_bisect) &&
+	cat >expected <<-EOF &&
+	# HEAD detached at $TGT
+	# You are currently bisecting, started from branch '\''bisect'\''.
 	#   (use "git bisect reset" to get back to the original branch)
 	#
 	nothing to commit (use -u to show untracked files)
@@ -577,10 +598,11 @@ test_expect_success 'status when rebase conflicts with statushints disabled' '
 	test_commit two_statushints main.txt two &&
 	test_commit three_statushints main.txt three &&
 	test_when_finished "git rebase --abort" &&
+	ONTO=$(git rev-parse --short HEAD^^) &&
 	test_must_fail git rebase HEAD^ --onto HEAD^^ &&
-	cat >expected <<-\EOF &&
-	# Not currently on any branch.
-	# You are currently rebasing.
+	cat >expected <<-EOF &&
+	# HEAD detached at $ONTO
+	# You are currently rebasing branch '\''statushints_disabled'\'' on '\''$ONTO'\''.
 	#
 	# Unmerged paths:
 	#	both modified:      main.txt
@@ -645,5 +667,73 @@ test_expect_success 'status when cherry-picking after resolving conflicts' '
 	test_i18ncmp expected actual
 '
 
+test_expect_success 'status showing detached from a tag' '
+	test_commit atag tagging &&
+	git checkout atag &&
+	cat >expected <<-\EOF
+	# HEAD detached at atag
+	nothing to commit (use -u to show untracked files)
+	EOF
+	git status --untracked-files=no >actual &&
+	test_i18ncmp expected actual
+'
+
+test_expect_success 'status while reverting commit (conflicts)' '
+	git checkout master &&
+	echo before >to-revert.txt &&
+	test_commit before to-revert.txt &&
+	echo old >to-revert.txt &&
+	test_commit old to-revert.txt &&
+	echo new >to-revert.txt &&
+	test_commit new to-revert.txt &&
+	TO_REVERT=$(git rev-parse --short HEAD^) &&
+	test_must_fail git revert $TO_REVERT &&
+	cat >expected <<-EOF
+	# On branch master
+	# You are currently reverting commit $TO_REVERT.
+	#   (fix conflicts and run "git revert --continue")
+	#   (use "git revert --abort" to cancel the revert operation)
+	#
+	# Unmerged paths:
+	#   (use "git reset HEAD <file>..." to unstage)
+	#   (use "git add <file>..." to mark resolution)
+	#
+	#	both modified:      to-revert.txt
+	#
+	no changes added to commit (use "git add" and/or "git commit -a")
+	EOF
+	git status --untracked-files=no >actual &&
+	test_i18ncmp expected actual
+'
+
+test_expect_success 'status while reverting commit (conflicts resolved)' '
+	echo reverted >to-revert.txt &&
+	git add to-revert.txt &&
+	cat >expected <<-EOF
+	# On branch master
+	# You are currently reverting commit $TO_REVERT.
+	#   (all conflicts fixed: run "git revert --continue")
+	#   (use "git revert --abort" to cancel the revert operation)
+	#
+	# Changes to be committed:
+	#   (use "git reset HEAD <file>..." to unstage)
+	#
+	#	modified:   to-revert.txt
+	#
+	# Untracked files not listed (use -u option to show untracked files)
+	EOF
+	git status --untracked-files=no >actual &&
+	test_i18ncmp expected actual
+'
+
+test_expect_success 'status after reverting commit' '
+	git revert --continue &&
+	cat >expected <<-\EOF
+	# On branch master
+	nothing to commit (use -u to show untracked files)
+	EOF
+	git status --untracked-files=no >actual &&
+	test_i18ncmp expected actual
+'
 
 test_done

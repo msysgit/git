@@ -6,7 +6,6 @@
 #include "cache.h"
 #include "builtin.h"
 #include "exec_cmd.h"
-#include "common-cmds.h"
 #include "parse-options.h"
 #include "run-command.h"
 #include "column.h"
@@ -37,10 +36,12 @@ enum help_format {
 static const char *html_path;
 
 static int show_all = 0;
+static int show_guides = 0;
 static unsigned int colopts;
 static enum help_format help_format = HELP_FORMAT_NONE;
 static struct option builtin_help_options[] = {
-	OPT_BOOLEAN('a', "all", &show_all, N_("print all available commands")),
+	OPT_BOOL('a', "all", &show_all, N_("print all available commands")),
+	OPT_BOOL('g', "guides", &show_guides, N_("print list of useful guides")),
 	OPT_SET_INT('m', "man", &help_format, N_("show man page"), HELP_FORMAT_MAN),
 	OPT_SET_INT('w', "web", &help_format, N_("show manual in web browser"),
 			HELP_FORMAT_WEB),
@@ -50,7 +51,7 @@ static struct option builtin_help_options[] = {
 };
 
 static const char * const builtin_help_usage[] = {
-	N_("git help [--all] [--man|--web|--info] [command]"),
+	N_("git help [--all] [--guides] [--man|--web|--info] [command]"),
 	NULL
 };
 
@@ -237,21 +238,21 @@ static int add_man_viewer_cmd(const char *name,
 
 static int add_man_viewer_info(const char *var, const char *value)
 {
-	const char *name = var + 4;
-	const char *subkey = strrchr(name, '.');
+	const char *name, *subkey;
+	int namelen;
 
-	if (!subkey)
+	if (parse_config_key(var, "man", &name, &namelen, &subkey) < 0 || !name)
 		return 0;
 
-	if (!strcmp(subkey, ".path")) {
+	if (!strcmp(subkey, "path")) {
 		if (!value)
 			return config_error_nonbool(var);
-		return add_man_viewer_path(name, subkey - name, value);
+		return add_man_viewer_path(name, namelen, value);
 	}
-	if (!strcmp(subkey, ".cmd")) {
+	if (!strcmp(subkey, "cmd")) {
 		if (!value)
 			return config_error_nonbool(var);
-		return add_man_viewer_cmd(name, subkey - name, value);
+		return add_man_viewer_cmd(name, namelen, value);
 	}
 
 	return 0;
@@ -286,23 +287,6 @@ static int git_help_config(const char *var, const char *value, void *cb)
 }
 
 static struct cmdnames main_cmds, other_cmds;
-
-void list_common_cmds_help(void)
-{
-	int i, longest = 0;
-
-	for (i = 0; i < ARRAY_SIZE(common_cmds); i++) {
-		if (longest < strlen(common_cmds[i].name))
-			longest = strlen(common_cmds[i].name);
-	}
-
-	puts(_("The most commonly used git commands are:"));
-	for (i = 0; i < ARRAY_SIZE(common_cmds); i++) {
-		printf("   %s   ", common_cmds[i].name);
-		mput_char(' ', longest - strlen(common_cmds[i].name));
-		puts(_(common_cmds[i].help));
-	}
-}
 
 static int is_git_command(const char *s)
 {
@@ -431,6 +415,37 @@ static void show_html_page(const char *git_cmd)
 	open_html(page_path.buf);
 }
 
+static struct {
+	const char *name;
+	const char *help;
+} common_guides[] = {
+	{ "attributes", N_("Defining attributes per path") },
+	{ "glossary", N_("A Git glossary") },
+	{ "ignore", N_("Specifies intentionally untracked files to ignore") },
+	{ "modules", N_("Defining submodule properties") },
+	{ "revisions", N_("Specifying revisions and ranges for Git") },
+	{ "tutorial", N_("A tutorial introduction to Git (for version 1.5.1 or newer)") },
+	{ "workflows", N_("An overview of recommended workflows with Git") },
+};
+
+static void list_common_guides_help(void)
+{
+	int i, longest = 0;
+
+	for (i = 0; i < ARRAY_SIZE(common_guides); i++) {
+		if (longest < strlen(common_guides[i].name))
+			longest = strlen(common_guides[i].name);
+	}
+
+	puts(_("The common Git guides are:\n"));
+	for (i = 0; i < ARRAY_SIZE(common_guides); i++) {
+		printf("   %s   ", common_guides[i].name);
+		mput_char(' ', longest - strlen(common_guides[i].name));
+		puts(_(common_guides[i].help));
+	}
+	putchar('\n');
+}
+
 int cmd_help(int argc, const char **argv, const char *prefix)
 {
 	int nongit;
@@ -446,7 +461,16 @@ int cmd_help(int argc, const char **argv, const char *prefix)
 		git_config(git_help_config, NULL);
 		printf(_("usage: %s%s"), _(git_usage_string), "\n\n");
 		list_commands(colopts, &main_cmds, &other_cmds);
+	}
+
+	if (show_guides)
+		list_common_guides_help();
+
+	if (show_all || show_guides) {
 		printf("%s\n", _(git_more_info_string));
+		/*
+		* We're done. Ignore any remaining args
+		*/
 		return 0;
 	}
 

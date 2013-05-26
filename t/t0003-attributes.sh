@@ -198,12 +198,50 @@ test_expect_success 'root subdir attribute test' '
 
 test_expect_success 'negative patterns' '
 	echo "!f test=bar" >.gitattributes &&
-	test_must_fail git check-attr test -- f
+	git check-attr test -- '"'"'!f'"'"' 2>errors &&
+	test_i18ngrep "Negative patterns are ignored" errors
 '
 
 test_expect_success 'patterns starting with exclamation' '
 	echo "\!f test=foo" >.gitattributes &&
 	attr_check "!f" foo
+'
+
+test_expect_success '"**" test' '
+	echo "**/f foo=bar" >.gitattributes &&
+	cat <<\EOF >expect &&
+f: foo: bar
+a/f: foo: bar
+a/b/f: foo: bar
+a/b/c/f: foo: bar
+EOF
+	git check-attr foo -- "f" >actual 2>err &&
+	git check-attr foo -- "a/f" >>actual 2>>err &&
+	git check-attr foo -- "a/b/f" >>actual 2>>err &&
+	git check-attr foo -- "a/b/c/f" >>actual 2>>err &&
+	test_cmp expect actual &&
+	test_line_count = 0 err
+'
+
+test_expect_success '"**" with no slashes test' '
+	echo "a**f foo=bar" >.gitattributes &&
+	git check-attr foo -- "f" >actual &&
+	cat <<\EOF >expect &&
+f: foo: unspecified
+af: foo: bar
+axf: foo: bar
+a/f: foo: unspecified
+a/b/f: foo: unspecified
+a/b/c/f: foo: unspecified
+EOF
+	git check-attr foo -- "f" >actual 2>err &&
+	git check-attr foo -- "af" >>actual 2>err &&
+	git check-attr foo -- "axf" >>actual 2>err &&
+	git check-attr foo -- "a/f" >>actual 2>>err &&
+	git check-attr foo -- "a/b/f" >>actual 2>>err &&
+	git check-attr foo -- "a/b/c/f" >>actual 2>>err &&
+	test_cmp expect actual &&
+	test_line_count = 0 err
 '
 
 test_expect_success 'setup bare' '

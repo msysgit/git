@@ -180,6 +180,12 @@ branch by running "git rm -rf ." from the top level of the working tree.
 Afterwards you will be ready to prepare your new files, repopulating the
 working tree, by copying them from elsewhere, extracting a tarball, etc.
 
+--ignore-skip-worktree-bits::
+	In sparse checkout mode, `git checkout -- <paths>` would
+	update only entries matched by <paths> and sparse patterns
+	in $GIT_DIR/info/sparse-checkout. This option ignores
+	the sparse patterns and adds back any files in <paths>.
+
 -m::
 --merge::
 	When switching branches,
@@ -333,7 +339,7 @@ a---b---c---d  branch 'master' (refers to commit 'd')
   tag 'v2.0' (refers to commit 'b')
 ------------
 
-In fact, we can perform all the normal git operations. But, let's look
+In fact, we can perform all the normal Git operations. But, let's look
 at what happens when we then checkout master:
 
 ------------
@@ -350,7 +356,7 @@ a---b---c---d  branch 'master' (refers to commit 'd')
 
 It is important to realize that at this point nothing refers to commit
 'f'. Eventually commit 'f' (and by extension commit 'e') will be deleted
-by the routine git garbage collection process, unless we create a reference
+by the routine Git garbage collection process, unless we create a reference
 before that happens. If we have not yet moved away from commit 'f',
 any of these will create a reference to it:
 

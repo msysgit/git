@@ -12,7 +12,7 @@ SYNOPSIS
 	   [--dry-run] [(-c | -C | --fixup | --squash) <commit>]
 	   [-F <file> | -m <msg>] [--reset-author] [--allow-empty]
 	   [--allow-empty-message] [--no-verify] [-e] [--author=<author>]
-	   [--date=<date>] [--cleanup=<mode>] [--status | --no-status]
+	   [--date=<date>] [--cleanup=<mode>] [--[no-]status]
 	   [-i | -o] [-S[<keyid>]] [--] [<file>...]
 
 DESCRIPTION
@@ -32,7 +32,7 @@ The content to be added can be specified in several ways:
 3. by listing files as arguments to the 'commit' command, in which
    case the commit will ignore changes staged in the index, and instead
    record the current content of the listed files (which must already
-   be known to git);
+   be known to Git);
 
 4. by using the -a switch with the 'commit' command to automatically
    "add" changes from all known files (i.e. all files that are already
@@ -59,7 +59,7 @@ OPTIONS
 --all::
 	Tell the command to automatically stage files that have
 	been modified and deleted, but new files you have not
-	told git about are not affected.
+	told Git about are not affected.
 
 -p::
 --patch::
@@ -137,6 +137,8 @@ OPTIONS
 -m <msg>::
 --message=<msg>::
 	Use the given <msg> as the commit message.
+	If multiple `-m` options are given, their values are
+	concatenated as separate paragraphs.
 
 -t <file>::
 --template=<file>::
@@ -172,20 +174,31 @@ OPTIONS
        linkgit:git-commit-tree[1].
 
 --cleanup=<mode>::
-	This option sets how the commit message is cleaned up.
-	The  '<mode>' can be one of 'verbatim', 'whitespace', 'strip',
-	and 'default'. The 'default' mode will strip leading and
-	trailing empty lines and #commentary from the commit message
-	only if the message is to be edited. Otherwise only whitespace
-	removed. The 'verbatim' mode does not change message at all,
-	'whitespace' removes just leading/trailing whitespace lines
-	and 'strip' removes both whitespace and commentary.
+	This option determines how the supplied commit message should be
+	cleaned up before committing.  The '<mode>' can be `strip`,
+	`whitespace`, `verbatim`, or `default`.
++
+--
+strip::
+	Strip leading and trailing empty lines, trailing whitespace, and
+	#commentary and collapse consecutive empty lines.
+whitespace::
+	Same as `strip` except #commentary is not removed.
+verbatim::
+	Do not change the message at all.
+default::
+	Same as `strip` if the message is to be edited.
+	Otherwise `whitespace`.
+--
++
+The default can be changed by the 'commit.cleanup' configuration
+variable (see linkgit:git-config[1]).
 
 -e::
 --edit::
 	The message taken from file with `-F`, command line with
-	`-m`, and from file with `-C` are usually used as the
-	commit log message unmodified.  This option lets you
+	`-m`, and from commit object with `-C` are usually used as
+	the commit log message unmodified. This option lets you
 	further edit the message taken from these sources.
 
 --no-edit::
@@ -194,14 +207,15 @@ OPTIONS
 	without changing its commit message.
 
 --amend::
-	Used to amend the tip of the current branch. Prepare the tree
-	object you would want to replace the latest commit as usual
-	(this includes the usual -i/-o and explicit paths), and the
-	commit log editor is seeded with the commit message from the
-	tip of the current branch. The commit you create replaces the
-	current tip -- if it was a merge, it will have the parents of
-	the current tip as parents -- so the current top commit is
-	discarded.
+	Replace the tip of the current branch by creating a new
+	commit. The recorded tree is prepared as usual (including
+	the effect of the `-i` and `-o` options and explicit
+	pathspec), and the message from the original commit is used
+	as the starting point, instead of an empty message, when no
+	other message is specified from the command line via options
+	such as `-m`, `-F`, `-c`, etc.  The new commit has the same
+	parents and author as the current one (the `--reset-author`
+	option can countermand this).
 +
 --
 It is a rough equivalent for:
@@ -402,7 +416,7 @@ Though not required, it's a good idea to begin the commit message
 with a single short (less than 50 character) line summarizing the
 change, followed by a blank line and then a more thorough description.
 The text up to the first blank line in a commit message is treated
-as the commit title, and that title is used throughout git.
+as the commit title, and that title is used throughout Git.
 For example, linkgit:git-format-patch[1] turns a commit into email, and it uses
 the title on the Subject line and the rest of the commit in the body.
 

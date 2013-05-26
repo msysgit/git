@@ -34,6 +34,7 @@ int git_inflate(git_zstream *, int flush);
 
 void git_deflate_init(git_zstream *, int level);
 void git_deflate_init_gzip(git_zstream *, int level);
+void git_deflate_init_raw(git_zstream *, int level);
 void git_deflate_end(git_zstream *);
 int git_deflate_abort(git_zstream *);
 int git_deflate_end_gently(git_zstream *);
@@ -131,7 +132,6 @@ struct cache_entry {
 	unsigned int ce_namelen;
 	unsigned char sha1[20];
 	struct cache_entry *next;
-	struct cache_entry *dir_next;
 	char name[FLEX_ARRAY]; /* more */
 };
 
@@ -161,6 +161,9 @@ struct cache_entry {
 
 #define CE_UNPACKED          (1 << 24)
 #define CE_NEW_SKIP_WORKTREE (1 << 25)
+
+/* used to temporarily mark paths matched by pathspecs */
+#define CE_MATCHED           (1 << 26)
 
 /*
  * Extended on-disk flags
@@ -267,25 +270,15 @@ struct index_state {
 	unsigned name_hash_initialized : 1,
 		 initialized : 1;
 	struct hash_table name_hash;
+	struct hash_table dir_hash;
 };
 
 extern struct index_state the_index;
 
 /* Name hashing */
 extern void add_name_hash(struct index_state *istate, struct cache_entry *ce);
-/*
- * We don't actually *remove* it, we can just mark it invalid so that
- * we won't find it in lookups.
- *
- * Not only would we have to search the lists (simple enough), but
- * we'd also have to rehash other hash buckets in case this makes the
- * hash bucket empty (common). So it's much better to just mark
- * it.
- */
-static inline void remove_name_hash(struct cache_entry *ce)
-{
-	ce->ce_flags |= CE_UNHASHED;
-}
+extern void remove_name_hash(struct index_state *istate, struct cache_entry *ce);
+extern void free_name_hash(struct index_state *istate);
 
 
 #ifndef NO_THE_INDEX_COMPATIBILITY_MACROS
@@ -318,6 +311,7 @@ static inline void remove_name_hash(struct cache_entry *ce)
 #define resolve_undo_clear() resolve_undo_clear_index(&the_index)
 #define unmerge_cache_entry_at(at) unmerge_index_entry_at(&the_index, at)
 #define unmerge_cache(pathspec) unmerge_index(&the_index, pathspec)
+#define read_blob_data_from_cache(path, sz) read_blob_data_from_index(&the_index, (path), (sz))
 #endif
 
 enum object_type {
@@ -341,9 +335,11 @@ static inline enum object_type object_type(unsigned int mode)
 		OBJ_BLOB;
 }
 
+/* Double-check local_repo_env below if you add to this list. */
 #define GIT_DIR_ENVIRONMENT "GIT_DIR"
 #define GIT_NAMESPACE_ENVIRONMENT "GIT_NAMESPACE"
 #define GIT_WORK_TREE_ENVIRONMENT "GIT_WORK_TREE"
+#define GIT_PREFIX_ENVIRONMENT "GIT_PREFIX"
 #define DEFAULT_GIT_DIR_ENVIRONMENT ".git"
 #define DB_ENVIRONMENT "GIT_OBJECT_DIRECTORY"
 #define INDEX_ENVIRONMENT "GIT_INDEX_FILE"
@@ -362,15 +358,27 @@ static inline enum object_type object_type(unsigned int mode)
 #define GIT_NOTES_DISPLAY_REF_ENVIRONMENT "GIT_NOTES_DISPLAY_REF"
 #define GIT_NOTES_REWRITE_REF_ENVIRONMENT "GIT_NOTES_REWRITE_REF"
 #define GIT_NOTES_REWRITE_MODE_ENVIRONMENT "GIT_NOTES_REWRITE_MODE"
+#define GIT_LITERAL_PATHSPECS_ENVIRONMENT "GIT_LITERAL_PATHSPECS"
 
 /*
- * Repository-local GIT_* environment variables
- * The array is NULL-terminated to simplify its usage in contexts such
- * environment creation or simple walk of the list.
- * The number of non-NULL entries is available as a macro.
+ * This environment variable is expected to contain a boolean indicating
+ * whether we should or should not treat:
+ *
+ *   GIT_DIR=foo.git git ...
+ *
+ * as if GIT_WORK_TREE=. was given. It's not expected that users will make use
+ * of this, but we use it internally to communicate to sub-processes that we
+ * are in a bare repo. If not set, defaults to true.
  */
-#define LOCAL_REPO_ENV_SIZE 9
-extern const char *const local_repo_env[LOCAL_REPO_ENV_SIZE + 1];
+#define GIT_IMPLICIT_WORK_TREE_ENVIRONMENT "GIT_IMPLICIT_WORK_TREE"
+
+/*
+ * Repository-local GIT_* environment variables; these will be cleared
+ * when git spawns a sub-process that runs inside another repository.
+ * The array is NULL-terminated, which makes it easy to pass in the "env"
+ * parameter of a run-command invocation, or to do a simple walk.
+ */
+extern const char * const local_repo_env[];
 
 extern int is_bare_repository_cfg;
 extern int is_bare_repository(void);
@@ -458,11 +466,13 @@ extern int remove_file_from_index(struct index_state *, const char *path);
 #define ADD_CACHE_IGNORE_ERRORS	4
 #define ADD_CACHE_IGNORE_REMOVAL 8
 #define ADD_CACHE_INTENT 16
+#define ADD_CACHE_IMPLICIT_DOT 32	/* internal to "git add -u/-A" */
 extern int add_to_index(struct index_state *, const char *path, struct stat *, int flags);
 extern int add_file_to_index(struct index_state *, const char *path, int flags);
 extern struct cache_entry *make_cache_entry(unsigned int mode, const unsigned char *sha1, const char *path, int stage, int refresh);
 extern int ce_same_name(struct cache_entry *a, struct cache_entry *b);
 extern int index_name_is_other(const struct index_state *, const char *, int);
+extern void *read_blob_data_from_index(struct index_state *, const char *, unsigned long *);
 
 /* do stat comparison even if CE_VALID is true */
 #define CE_MATCH_IGNORE_VALID		01
@@ -473,6 +483,8 @@ extern int index_name_is_other(const struct index_state *, const char *, int);
 extern int ie_match_stat(const struct index_state *, struct cache_entry *, struct stat *, unsigned int);
 extern int ie_modified(const struct index_state *, struct cache_entry *, struct stat *, unsigned int);
 
+#define PATHSPEC_ONESTAR 1	/* the pathspec pattern sastisfies GFNM_ONESTAR */
+
 struct pathspec {
 	const char **raw; /* get_pathspec() result, not freed by free_pathspec() */
 	int nr;
@@ -482,13 +494,16 @@ struct pathspec {
 	struct pathspec_item {
 		const char *match;
 		int len;
-		unsigned int use_wildcard:1;
+		int nowildcard_len;
+		int flags;
 	} *items;
 };
 
 extern int init_pathspec(struct pathspec *, const char **);
 extern void free_pathspec(struct pathspec *);
 extern int ce_path_match(const struct cache_entry *ce, const struct pathspec *pathspec);
+
+extern int limit_pathspec_to_literal(void);
 
 #define HASH_WRITE_OBJECT 1
 #define HASH_FORMAT_CHECK 2
@@ -530,6 +545,7 @@ extern int delete_ref(const char *, const unsigned char *sha1, int delopt);
 /* Environment bits from configuration mechanism */
 extern int trust_executable_bit;
 extern int trust_ctime;
+extern int check_stat;
 extern int quote_path_fully;
 extern int has_symlinks;
 extern int minimum_abbrev, default_abbrev;
@@ -555,6 +571,12 @@ extern int fsync_object_files;
 extern int core_preload_index;
 extern int core_apply_sparse_checkout;
 extern int precomposed_unicode;
+
+/*
+ * The character that begins a commented line in user-editable file
+ * that is subject to stripspace.
+ */
+extern char comment_line_char;
 
 enum hide_dotfiles_type {
 	HIDE_DOTFILES_FALSE = 0,
@@ -707,8 +729,7 @@ enum sharedrepo {
 	PERM_EVERYBODY      = 0664
 };
 int git_config_perm(const char *var, const char *value);
-int set_shared_perm(const char *path, int mode);
-#define adjust_shared_perm(path) set_shared_perm((path), 0)
+int adjust_shared_perm(const char *path);
 int safe_create_leading_directories(char *path);
 int safe_create_leading_directories_const(const char *path);
 int mkdir_in_gitdir(const char *path);
@@ -1006,15 +1027,20 @@ struct ref {
 	unsigned char old_sha1[20];
 	unsigned char new_sha1[20];
 	char *symref;
-	unsigned int force:1,
+	unsigned int
+		force:1,
+		forced_update:1,
 		merge:1,
-		nonfastforward:1,
-		deletion:1;
+		deletion:1,
+		matched:1;
 	enum {
 		REF_STATUS_NONE = 0,
 		REF_STATUS_OK,
 		REF_STATUS_REJECT_NONFASTFORWARD,
+		REF_STATUS_REJECT_ALREADY_EXISTS,
 		REF_STATUS_REJECT_NODELETE,
+		REF_STATUS_REJECT_FETCH_FIRST,
+		REF_STATUS_REJECT_NEEDS_FORCE,
 		REF_STATUS_UPTODATE,
 		REF_STATUS_REMOTE_REJECT,
 		REF_STATUS_EXPECTING_REPORT
@@ -1038,13 +1064,18 @@ struct extra_have_objects {
 	int nr, alloc;
 	unsigned char (*array)[20];
 };
-extern struct ref **get_remote_heads(int in, struct ref **list, unsigned int flags, struct extra_have_objects *);
+extern struct ref **get_remote_heads(int in, char *src_buf, size_t src_len,
+				     struct ref **list, unsigned int flags,
+				     struct extra_have_objects *);
 extern int server_supports(const char *feature);
 extern int parse_feature_request(const char *features, const char *feature);
 extern const char *server_feature_value(const char *feature, int *len_ret);
 extern const char *parse_feature_value(const char *feature_list, const char *feature, int *len_ret);
 
 extern struct packed_git *parse_pack_index(unsigned char *sha1, const char *idx_path);
+
+/* A hook for count-objects to report invalid files in pack directory */
+extern void (*report_garbage)(const char *desc, const char *path);
 
 extern void prepare_packed_git(void);
 extern void reprepare_packed_git(void);
@@ -1143,6 +1174,9 @@ extern int check_repository_format_version(const char *var, const char *value, v
 extern int git_env_bool(const char *, int);
 extern int git_config_system(void);
 extern int config_error_nonbool(const char *);
+#if defined(__GNUC__) && ! defined(__clang__)
+#define config_error_nonbool(s) (config_error_nonbool(s), -1)
+#endif
 extern const char *get_log_output_encoding(void);
 extern const char *get_commit_output_encoding(void);
 
@@ -1156,12 +1190,28 @@ struct config_include_data {
 #define CONFIG_INCLUDE_INIT { 0 }
 extern int git_config_include(const char *name, const char *value, void *data);
 
+/*
+ * Match and parse a config key of the form:
+ *
+ *   section.(subsection.)?key
+ *
+ * (i.e., what gets handed to a config_fn_t). The caller provides the section;
+ * we return -1 if it does not match, 0 otherwise. The subsection and key
+ * out-parameters are filled by the function (and subsection is NULL if it is
+ * missing).
+ */
+extern int parse_config_key(const char *var,
+			    const char *section,
+			    const char **subsection, int *subsection_len,
+			    const char **key);
+
 extern int committer_ident_sufficiently_given(void);
 extern int author_ident_sufficiently_given(void);
 
 extern const char *git_commit_encoding;
 extern const char *git_log_output_encoding;
 extern const char *git_mailmap_file;
+extern const char *git_mailmap_blob;
 
 /* IO helper functions */
 extern void maybe_flush_or_die(FILE *, const char *);

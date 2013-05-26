@@ -46,7 +46,7 @@ static void replace_index_entry(struct index_state *istate, int nr, struct cache
 {
 	struct cache_entry *old = istate->cache[nr];
 
-	remove_name_hash(old);
+	remove_name_hash(istate, old);
 	set_index_entry(istate, nr, ce);
 	istate->cache_changed = 1;
 }
@@ -197,21 +197,25 @@ static int ce_match_stat_basic(struct cache_entry *ce, struct stat *st)
 	}
 	if (ce->ce_mtime.sec != (unsigned int)st->st_mtime)
 		changed |= MTIME_CHANGED;
-	if (trust_ctime && ce->ce_ctime.sec != (unsigned int)st->st_ctime)
+	if (trust_ctime && check_stat &&
+	    ce->ce_ctime.sec != (unsigned int)st->st_ctime)
 		changed |= CTIME_CHANGED;
 
 #ifdef USE_NSEC
-	if (ce->ce_mtime.nsec != ST_MTIME_NSEC(*st))
+	if (check_stat && ce->ce_mtime.nsec != ST_MTIME_NSEC(*st))
 		changed |= MTIME_CHANGED;
-	if (trust_ctime && ce->ce_ctime.nsec != ST_CTIME_NSEC(*st))
+	if (trust_ctime && check_stat &&
+	    ce->ce_ctime.nsec != ST_CTIME_NSEC(*st))
 		changed |= CTIME_CHANGED;
 #endif
 
-	if (ce->ce_uid != (unsigned int) st->st_uid ||
-	    ce->ce_gid != (unsigned int) st->st_gid)
-		changed |= OWNER_CHANGED;
-	if (ce->ce_ino != (unsigned int) st->st_ino)
-		changed |= INODE_CHANGED;
+	if (check_stat) {
+		if (ce->ce_uid != (unsigned int) st->st_uid ||
+			ce->ce_gid != (unsigned int) st->st_gid)
+			changed |= OWNER_CHANGED;
+		if (ce->ce_ino != (unsigned int) st->st_ino)
+			changed |= INODE_CHANGED;
+	}
 
 #ifdef USE_STDEV
 	/*
@@ -219,8 +223,8 @@ static int ce_match_stat_basic(struct cache_entry *ce, struct stat *st)
 	 * clients will have different views of what "device"
 	 * the filesystem is on
 	 */
-	if (ce->ce_dev != (unsigned int) st->st_dev)
-		changed |= INODE_CHANGED;
+	if (check_stat && ce->ce_dev != (unsigned int) st->st_dev)
+			changed |= INODE_CHANGED;
 #endif
 
 	if (ce->ce_size != (unsigned int) st->st_size)
@@ -456,7 +460,7 @@ int remove_index_entry_at(struct index_state *istate, int pos)
 	struct cache_entry *ce = istate->cache[pos];
 
 	record_resolve_undo(istate, ce);
-	remove_name_hash(ce);
+	remove_name_hash(istate, ce);
 	istate->cache_changed = 1;
 	istate->cache_nr--;
 	if (pos >= istate->cache_nr)
@@ -479,7 +483,7 @@ void remove_marked_cache_entries(struct index_state *istate)
 
 	for (i = j = 0; i < istate->cache_nr; i++) {
 		if (ce_array[i]->ce_flags & CE_REMOVE)
-			remove_name_hash(ce_array[i]);
+			remove_name_hash(istate, ce_array[i]);
 		else
 			ce_array[j++] = ce_array[i];
 	}
@@ -1256,7 +1260,7 @@ static int verify_hdr(struct cache_header *hdr, unsigned long size)
 	if (hdr->hdr_signature != htonl(CACHE_SIGNATURE))
 		return error("bad signature");
 	hdr_version = ntohl(hdr->hdr_version);
-	if (hdr_version < 2 || 4 < hdr_version)
+	if (hdr_version < INDEX_FORMAT_LB || INDEX_FORMAT_UB < hdr_version)
 		return error("bad index version %d", hdr_version);
 	git_SHA1_Init(&c);
 	git_SHA1_Update(&c, hdr, size - 20);
@@ -1511,8 +1515,7 @@ int discard_index(struct index_state *istate)
 	istate->cache_changed = 0;
 	istate->timestamp.sec = 0;
 	istate->timestamp.nsec = 0;
-	istate->name_hash_initialized = 0;
-	free_hash(&istate->name_hash);
+	free_name_hash(istate);
 	cache_tree_free(&(istate->cache_tree));
 	istate->initialized = 0;
 
@@ -1895,4 +1898,38 @@ int index_name_is_other(const struct index_state *istate, const char *name,
 			return 0; /* Yup, this one exists unmerged */
 	}
 	return 1;
+}
+
+void *read_blob_data_from_index(struct index_state *istate, const char *path, unsigned long *size)
+{
+	int pos, len;
+	unsigned long sz;
+	enum object_type type;
+	void *data;
+
+	len = strlen(path);
+	pos = index_name_pos(istate, path, len);
+	if (pos < 0) {
+		/*
+		 * We might be in the middle of a merge, in which
+		 * case we would read stage #2 (ours).
+		 */
+		int i;
+		for (i = -pos - 1;
+		     (pos < 0 && i < istate->cache_nr &&
+		      !strcmp(istate->cache[i]->name, path));
+		     i++)
+			if (ce_stage(istate->cache[i]) == 2)
+				pos = i;
+	}
+	if (pos < 0)
+		return NULL;
+	data = read_sha1_file(istate->cache[pos]->sha1, &type, &sz);
+	if (!data || type != OBJ_BLOB) {
+		free(data);
+		return NULL;
+	}
+	if (size)
+		*size = sz;
+	return data;
 }

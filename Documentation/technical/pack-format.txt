@@ -1,4 +1,4 @@
-GIT pack format
+Git pack format
 ===============
 
 == pack-*.pack files have the following format:
@@ -9,7 +9,7 @@ GIT pack format
          The signature is: {'P', 'A', 'C', 'K'}
 
      4-byte version number (network byte order):
-         GIT currently accepts version number 2 or 3 but
+	 Git currently accepts version number 2 or 3 but
          generates version 2 only.
 
      4-byte number of objects contained in the pack (network byte order)
@@ -26,13 +26,15 @@ GIT pack format
 
      (deltified representation)
      n-byte type and length (3-bit type, (n-1)*7+4-bit length)
-     20-byte base object name
+     20-byte base object name if OBJ_REF_DELTA or a negative relative
+	 offset from the delta object's position in the pack if this
+	 is an OBJ_OFS_DELTA object
      compressed delta data
 
      Observation: length of each object is encoded in a variable
      length format and is not constrained to 32-bit or anything.
 
-  - The trailer records 20-byte SHA1 checksum of all of the above.
+  - The trailer records 20-byte SHA-1 checksum of all of the above.
 
 == Original (version 1) pack-*.idx files have the following format:
 
@@ -53,10 +55,10 @@ GIT pack format
 
   - The file is concluded with a trailer:
 
-    A copy of the 20-byte SHA1 checksum at the end of
+    A copy of the 20-byte SHA-1 checksum at the end of
     corresponding packfile.
 
-    20-byte SHA1-checksum of all of the above.
+    20-byte SHA-1-checksum of all of the above.
 
 Pack Idx file:
 
@@ -104,7 +106,7 @@ Pack file entry: <+
         If it is not DELTA, then deflated bytes (the size above
 		is the size before compression).
 	If it is REF_DELTA, then
-	  20-byte base object name SHA1 (the size above is the
+	  20-byte base object name SHA-1 (the size above is the
 		size of the delta data that follows).
           delta data, deflated.
 	If it is OFS_DELTA, then
@@ -133,7 +135,7 @@ Pack file entry: <+
 
   - A 256-entry fan-out table just like v1.
 
-  - A table of sorted 20-byte SHA1 object names.  These are
+  - A table of sorted 20-byte SHA-1 object names.  These are
     packed together without offset values to reduce the cache
     footprint of the binary search for a specific object name.
 
@@ -154,7 +156,7 @@ Pack file entry: <+
 
   - The same trailer as a v1 pack file:
 
-    A copy of the 20-byte SHA1 checksum at the end of
+    A copy of the 20-byte SHA-1 checksum at the end of
     corresponding packfile.
 
-    20-byte SHA1-checksum of all of the above.
+    20-byte SHA-1-checksum of all of the above.

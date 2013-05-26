@@ -80,6 +80,22 @@ test_expect_success 'change gets noticed' '
 
 '
 
+# Note that this is scheduled to change in Git 2.0, when
+# "git add -u" will become full-tree by default.
+test_expect_success 'non-limited update in subdir leaves root alone' '
+	(
+		cd dir1 &&
+		echo even more >>sub2 &&
+		git add -u
+	) &&
+	cat >expect <<-\EOF &&
+	check
+	top
+	EOF
+	git diff-files --name-only >actual &&
+	test_cmp expect actual
+'
+
 test_expect_success SYMLINKS 'replace a file with a symlink' '
 
 	rm foo &&
@@ -150,9 +166,9 @@ test_expect_success 'add -u resolves unmerged paths' '
 	echo 2 >path3 &&
 	echo 2 >path5 &&
 
-	# Explicit resolving by adding removed paths should fail
-	test_must_fail git add path4 &&
-	test_must_fail git add path6 &&
+	# Fail to explicitly resolve removed paths with "git add"
+	test_must_fail git add --no-all path4 &&
+	test_must_fail git add --no-all path6 &&
 
 	# "add -u" should notice removals no matter what stages
 	# the index entries are in.

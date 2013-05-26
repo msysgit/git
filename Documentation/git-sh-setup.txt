@@ -3,7 +3,7 @@ git-sh-setup(1)
 
 NAME
 ----
-git-sh-setup - Common git shell script setup code
+git-sh-setup - Common Git shell script setup code
 
 SYNOPSIS
 --------
@@ -19,7 +19,7 @@ Porcelain-ish scripts and/or are writing new ones.
 
 The 'git sh-setup' scriptlet is designed to be sourced (using
 `.`) by other shell scripts to set up some variables pointing at
-the normal git directories and a few helper shell functions.
+the normal Git directories and a few helper shell functions.
 
 Before sourcing it, your script should set up a few variables;
 `USAGE` (and `LONG_USAGE`, if any) is used to define message
@@ -81,6 +81,12 @@ require_clean_work_tree rebase "Please commit or stash them."
 get_author_ident_from_commit::
 	outputs code for use with eval to set the GIT_AUTHOR_NAME,
 	GIT_AUTHOR_EMAIL and GIT_AUTHOR_DATE variables for a given commit.
+
+create_virtual_base::
+	modifies the first file so only lines in common with the
+	second file remain. If there is insufficient common material,
+	then the first file is left empty. The result is suitable
+	as a virtual base input for a 3-way merge.
 
 GIT
 ---

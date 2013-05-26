@@ -30,7 +30,8 @@ set to `no` at the beginning of them.
 
 --no-ff::
 	Create a merge commit even when the merge resolves as a
-	fast-forward.
+	fast-forward.  This is the default behaviour when merging an
+	annotated (and possibly signed) tag.
 
 --ff-only::
 	Refuse to merge and exit with a non-zero status unless the
@@ -82,6 +83,11 @@ option can be used to override --squash.
 --strategy-option=<option>::
 	Pass merge strategy specific option through to the merge
 	strategy.
+
+--verify-signatures::
+--no-verify-signatures::
+	Verify that the commits being merged have good and trusted GPG signatures
+	and abort the merge in case they do not.
 
 --summary::
 --no-summary::

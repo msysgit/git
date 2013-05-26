@@ -3,17 +3,15 @@
 #include "xdiff-interface.h"
 #include "blob.h"
 #include "exec_cmd.h"
-#include "merge-file.h"
+#include "merge-blobs.h"
 
 static const char merge_tree_usage[] = "git merge-tree <base-tree> <branch1> <branch2>";
-static int resolve_directories = 1;
 
 struct merge_list {
 	struct merge_list *next;
 	struct merge_list *link;	/* other stages for this object */
 
-	unsigned int stage : 2,
-		     flags : 30;
+	unsigned int stage : 2;
 	unsigned int mode;
 	const char *path;
 	struct blob *blob;
@@ -27,7 +25,7 @@ static void add_merge_entry(struct merge_list *entry)
 	merge_result_end = &entry->next;
 }
 
-static void merge_trees(struct tree_desc t[3], const char *base);
+static void merge_trees_recursive(struct tree_desc t[3], const char *base, int df_conflict);
 
 static const char *explanation(struct merge_list *entry)
 {
@@ -76,7 +74,7 @@ static void *result(struct merge_list *entry, unsigned long *size)
 	their = NULL;
 	if (entry)
 		their = entry->blob;
-	return merge_file(path, base, our, their, size);
+	return merge_blobs(path, base, our, their, size);
 }
 
 static void *origin(struct merge_list *entry, unsigned long *size)
@@ -157,6 +155,11 @@ static int same_entry(struct name_entry *a, struct name_entry *b)
 		a->mode == b->mode;
 }
 
+static int both_empty(struct name_entry *a, struct name_entry *b)
+{
+	return !(a->sha1 || b->sha1);
+}
+
 static struct merge_list *create_entry(unsigned stage, unsigned mode, const unsigned char *sha1, const char *path)
 {
 	struct merge_list *res = xcalloc(1, sizeof(*res));
@@ -174,17 +177,17 @@ static char *traverse_path(const struct traverse_info *info, const struct name_e
 	return make_traverse_path(path, info, n);
 }
 
-static void resolve(const struct traverse_info *info, struct name_entry *branch1, struct name_entry *result)
+static void resolve(const struct traverse_info *info, struct name_entry *ours, struct name_entry *result)
 {
 	struct merge_list *orig, *final;
 	const char *path;
 
-	/* If it's already branch1, don't bother showing it */
-	if (!branch1)
+	/* If it's already ours, don't bother showing it */
+	if (!ours)
 		return;
 
 	path = traverse_path(info, result);
-	orig = create_entry(2, branch1->mode, branch1->sha1, path);
+	orig = create_entry(2, ours->mode, ours->sha1, path);
 	final = create_entry(0, result->mode, result->sha1, path);
 
 	final->link = orig;
@@ -192,34 +195,35 @@ static void resolve(const struct traverse_info *info, struct name_entry *branch1
 	add_merge_entry(final);
 }
 
-static int unresolved_directory(const struct traverse_info *info, struct name_entry n[3])
+static void unresolved_directory(const struct traverse_info *info, struct name_entry n[3],
+				 int df_conflict)
 {
 	char *newbase;
 	struct name_entry *p;
 	struct tree_desc t[3];
 	void *buf0, *buf1, *buf2;
 
-	if (!resolve_directories)
-		return 0;
-	p = n;
-	if (!p->mode) {
-		p++;
-		if (!p->mode)
-			p++;
+	for (p = n; p < n + 3; p++) {
+		if (p->mode && S_ISDIR(p->mode))
+			break;
 	}
-	if (!S_ISDIR(p->mode))
-		return 0;
+	if (n + 3 <= p)
+		return; /* there is no tree here */
+
 	newbase = traverse_path(info, p);
-	buf0 = fill_tree_descriptor(t+0, n[0].sha1);
-	buf1 = fill_tree_descriptor(t+1, n[1].sha1);
-	buf2 = fill_tree_descriptor(t+2, n[2].sha1);
-	merge_trees(t, newbase);
+
+#define ENTRY_SHA1(e) (((e)->mode && S_ISDIR((e)->mode)) ? (e)->sha1 : NULL)
+	buf0 = fill_tree_descriptor(t+0, ENTRY_SHA1(n + 0));
+	buf1 = fill_tree_descriptor(t+1, ENTRY_SHA1(n + 1));
+	buf2 = fill_tree_descriptor(t+2, ENTRY_SHA1(n + 2));
+#undef ENTRY_SHA1
+
+	merge_trees_recursive(t, newbase, df_conflict);
 
 	free(buf0);
 	free(buf1);
 	free(buf2);
 	free(newbase);
-	return 1;
 }
 
 
@@ -242,18 +246,30 @@ static struct merge_list *link_entry(unsigned stage, const struct traverse_info 
 static void unresolved(const struct traverse_info *info, struct name_entry n[3])
 {
 	struct merge_list *entry = NULL;
+	int i;
+	unsigned dirmask = 0, mask = 0;
 
-	if (unresolved_directory(info, n))
+	for (i = 0; i < 3; i++) {
+		mask |= (1 << i);
+		/*
+		 * Treat missing entries as directories so that we return
+		 * after unresolved_directory has handled this.
+		 */
+		if (!n[i].mode || S_ISDIR(n[i].mode))
+			dirmask |= (1 << i);
+	}
+
+	unresolved_directory(info, n, dirmask && (dirmask != mask));
+
+	if (dirmask == mask)
 		return;
 
-	/*
-	 * Do them in reverse order so that the resulting link
-	 * list has the stages in order - link_entry adds new
-	 * links at the front.
-	 */
-	entry = link_entry(3, info, n + 2, entry);
-	entry = link_entry(2, info, n + 1, entry);
-	entry = link_entry(1, info, n + 0, entry);
+	if (n[2].mode && !S_ISDIR(n[2].mode))
+		entry = link_entry(3, info, n + 2, entry);
+	if (n[1].mode && !S_ISDIR(n[1].mode))
+		entry = link_entry(2, info, n + 1, entry);
+	if (n[0].mode && !S_ISDIR(n[0].mode))
+		entry = link_entry(1, info, n + 0, entry);
 
 	add_merge_entry(entry);
 }
@@ -290,38 +306,48 @@ static void unresolved(const struct traverse_info *info, struct name_entry n[3])
 static int threeway_callback(int n, unsigned long mask, unsigned long dirmask, struct name_entry *entry, struct traverse_info *info)
 {
 	/* Same in both? */
-	if (same_entry(entry+1, entry+2)) {
-		if (entry[0].sha1) {
-			resolve(info, NULL, entry+1);
-			return mask;
-		}
+	if (same_entry(entry+1, entry+2) || both_empty(entry+1, entry+2)) {
+		/* Modified, added or removed identically */
+		resolve(info, NULL, entry+1);
+		return mask;
 	}
 
 	if (same_entry(entry+0, entry+1)) {
 		if (entry[2].sha1 && !S_ISDIR(entry[2].mode)) {
+			/* We did not touch, they modified -- take theirs */
 			resolve(info, entry+1, entry+2);
 			return mask;
 		}
+		/*
+		 * If we did not touch a directory but they made it
+		 * into a file, we fall through and unresolved()
+		 * recurses down.  Likewise for the opposite case.
+		 */
 	}
 
-	if (same_entry(entry+0, entry+2)) {
-		if (entry[1].sha1 && !S_ISDIR(entry[1].mode)) {
-			resolve(info, NULL, entry+1);
-			return mask;
-		}
+	if (same_entry(entry+0, entry+2) || both_empty(entry+0, entry+2)) {
+		/* We added, modified or removed, they did not touch -- take ours */
+		resolve(info, NULL, entry+1);
+		return mask;
 	}
 
 	unresolved(info, entry);
 	return mask;
 }
 
-static void merge_trees(struct tree_desc t[3], const char *base)
+static void merge_trees_recursive(struct tree_desc t[3], const char *base, int df_conflict)
 {
 	struct traverse_info info;
 
 	setup_traverse_info(&info, base);
+	info.data = &df_conflict;
 	info.fn = threeway_callback;
 	traverse_trees(3, t, &info);
+}
+
+static void merge_trees(struct tree_desc t[3], const char *base)
+{
+	merge_trees_recursive(t, base, 0);
 }
 
 static void *get_tree_descriptor(struct tree_desc *desc, const char *rev)

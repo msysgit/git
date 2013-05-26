@@ -13,9 +13,9 @@
 use 5.008;
 use strict;
 use warnings;
+use Error qw(:try);
 use File::Basename qw(dirname);
 use File::Copy;
-use File::Compare;
 use File::Find;
 use File::stat;
 use File::Path qw(mkpath rmtree);
@@ -59,57 +59,16 @@ sub find_worktree
 	return $worktree;
 }
 
-sub filter_tool_scripts
-{
-	my ($tools) = @_;
-	if (-d $_) {
-		if ($_ ne ".") {
-			# Ignore files in subdirectories
-			$File::Find::prune = 1;
-		}
-	} else {
-		if ((-f $_) && ($_ ne "defaults")) {
-			push(@$tools, $_);
-		}
-	}
-}
-
 sub print_tool_help
 {
-	my ($cmd, @found, @notfound, @tools);
-	my $gitpath = Git::exec_path();
+	my $cmd = 'TOOL_MODE=diff';
+	$cmd .= ' && . "$(git --exec-path)/git-mergetool--lib"';
+	$cmd .= ' && show_tool_help';
 
-	find(sub { filter_tool_scripts(\@tools) }, "$gitpath/mergetools");
-
-	foreach my $tool (@tools) {
-		$cmd  = "TOOL_MODE=diff";
-		$cmd .= ' && . "$(git --exec-path)/git-mergetool--lib"';
-		$cmd .= " && get_merge_tool_path $tool >/dev/null 2>&1";
-		$cmd .= " && can_diff >/dev/null 2>&1";
-		if (system('sh', '-c', $cmd) == 0) {
-			push(@found, $tool);
-		} else {
-			push(@notfound, $tool);
-		}
-	}
-
-	print << 'EOF';
-'git difftool --tool=<tool>' may be set to one of the following:
-EOF
-	print "\t$_\n" for (sort(@found));
-
-	print << 'EOF';
-
-The following tools are valid, but not currently available:
-EOF
-	print "\t$_\n" for (sort(@notfound));
-
-	print << 'EOF';
-
-NOTE: Some of the tools listed above only work in a windowed
-environment. If run in a terminal-only session, they will fail.
-EOF
-	exit(0);
+	# See the comment at the bottom of file_diff() for the reason behind
+	# using system() followed by exit() instead of exec().
+	my $rc = system('sh', '-c', $cmd);
+	exit($rc | ($rc >> 8));
 }
 
 sub exit_cleanup
@@ -122,6 +81,58 @@ sub exit_cleanup
 		warn "$file line $line: $errno\n";
 	}
 	exit($status | ($status >> 8));
+}
+
+sub use_wt_file
+{
+	my ($repo, $workdir, $file, $sha1, $symlinks) = @_;
+	my $null_sha1 = '0' x 40;
+
+	if ($sha1 ne $null_sha1 and not $symlinks) {
+		return 0;
+	}
+
+	if (! -e "$workdir/$file") {
+		# If the file doesn't exist in the working tree, we cannot
+		# use it.
+		return (0, $null_sha1);
+	}
+
+	my $wt_sha1 = $repo->command_oneline('hash-object', "$workdir/$file");
+	my $use = ($sha1 eq $null_sha1) || ($sha1 eq $wt_sha1);
+	return ($use, $wt_sha1);
+}
+
+sub changed_files
+{
+	my ($repo_path, $index, $worktree) = @_;
+	$ENV{GIT_INDEX_FILE} = $index;
+	$ENV{GIT_WORK_TREE} = $worktree;
+	my $must_unset_git_dir = 0;
+	if (not defined($ENV{GIT_DIR})) {
+		$must_unset_git_dir = 1;
+		$ENV{GIT_DIR} = $repo_path;
+	}
+
+	my @refreshargs = qw/update-index --really-refresh -q --unmerged/;
+	my @gitargs = qw/diff-files --name-only -z/;
+	try {
+		Git::command_oneline(@refreshargs);
+	} catch Git::Error::Command with {};
+
+	my $line = Git::command_oneline(@gitargs);
+	my @files;
+	if (defined $line) {
+		@files = split('\0', $line);
+	} else {
+		@files = ();
+	}
+
+	delete($ENV{GIT_INDEX_FILE});
+	delete($ENV{GIT_WORK_TREE});
+	delete($ENV{GIT_DIR}) if ($must_unset_git_dir);
+
+	return map { $_ => 1 } @files;
 }
 
 sub setup_dir_diff
@@ -147,6 +158,7 @@ sub setup_dir_diff
 	my $null_sha1 = '0' x 40;
 	my $lindex = '';
 	my $rindex = '';
+	my $wtindex = '';
 	my %submodule;
 	my %symlink;
 	my @working_tree = ();
@@ -200,10 +212,14 @@ EOF
 		}
 
 		if ($rmode ne $null_mode) {
-			if ($rsha1 ne $null_sha1) {
-				$rindex .= "$rmode $rsha1\t$dst_path\0";
+			my ($use, $wt_sha1) = use_wt_file($repo, $workdir,
+							  $dst_path, $rsha1,
+							  $symlinks);
+			if ($use) {
+				push @working_tree, $dst_path;
+				$wtindex .= "$rmode $wt_sha1\t$dst_path\0";
 			} else {
-				push(@working_tree, $dst_path);
+				$rindex .= "$rmode $rsha1\t$dst_path\0";
 			}
 		}
 	}
@@ -244,13 +260,21 @@ EOF
 	$rc = system('git', 'checkout-index', '--all', "--prefix=$rdir/");
 	exit_cleanup($tmpdir, $rc) if $rc != 0;
 
+	$ENV{GIT_INDEX_FILE} = "$tmpdir/wtindex";
+	($inpipe, $ctx) =
+		$repo->command_input_pipe(qw(update-index --info-only -z --index-info));
+	print($inpipe $wtindex);
+	$repo->command_close_pipe($inpipe, $ctx);
+
 	# If $GIT_DIR was explicitly set just for the update/checkout
 	# commands, then it should be unset before continuing.
 	delete($ENV{GIT_DIR}) if ($must_unset_git_dir);
 	delete($ENV{GIT_INDEX_FILE});
 
 	# Changes in the working tree need special treatment since they are
-	# not part of the index
+	# not part of the index. Remove any trailing slash from $workdir
+	# before starting to avoid double slashes in symlink targets.
+	$workdir =~ s|/$||;
 	for my $file (@working_tree) {
 		my $dir = dirname($file);
 		unless (-d "$rdir/$dir") {
@@ -377,7 +401,7 @@ sub main
 	}
 	if ($opts{gui}) {
 		my $guitool = Git::config('diff.guitool');
-		if (length($guitool) > 0) {
+		if (defined($guitool) && length($guitool) > 0) {
 			$ENV{GIT_DIFF_TOOL} = $guitool;
 		}
 	}
@@ -414,19 +438,34 @@ sub dir_diff
 	# should be copied back to the working tree.
 	# Do not copy back files when symlinks are used and the
 	# external tool did not replace the original link with a file.
+	#
+	# These hashes are loaded lazily since they aren't needed
+	# in the common case of --symlinks and the difftool updating
+	# files through the symlink.
+	my %wt_modified;
+	my %tmp_modified;
+	my $indices_loaded = 0;
+
 	for my $file (@worktree) {
 		next if $symlinks && -l "$b/$file";
 		next if ! -f "$b/$file";
 
-		my $diff = compare("$b/$file", "$workdir/$file");
-		if ($diff == 0) {
-			next;
-		} elsif ($diff == -1) {
-			my $errmsg = "warning: Could not compare ";
-			$errmsg += "'$b/$file' with '$workdir/$file'\n";
+		if (!$indices_loaded) {
+			%wt_modified = changed_files($repo->repo_path(),
+				"$tmpdir/wtindex", "$workdir");
+			%tmp_modified = changed_files($repo->repo_path(),
+				"$tmpdir/wtindex", "$b");
+			$indices_loaded = 1;
+		}
+
+		if (exists $wt_modified{$file} and exists $tmp_modified{$file}) {
+			my $errmsg = "warning: Both files modified: ";
+			$errmsg .= "'$workdir/$file' and '$b/$file'.\n";
+			$errmsg .= "warning: Working tree file has been left.\n";
+			$errmsg .= "warning:\n";
 			warn $errmsg;
 			$error = 1;
-		} elsif ($diff == 1) {
+		} elsif (exists $tmp_modified{$file}) {
 			my $mode = stat("$b/$file")->mode;
 			copy("$b/$file", "$workdir/$file") or
 			exit_cleanup($tmpdir, 1);

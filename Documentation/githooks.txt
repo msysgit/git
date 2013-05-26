@@ -3,7 +3,7 @@ githooks(5)
 
 NAME
 ----
-githooks - Hooks used by git
+githooks - Hooks used by Git
 
 SYNOPSIS
 --------
@@ -99,7 +99,7 @@ given); `template` (if a `-t` option was given or the
 configuration option `commit.template` is set); `merge` (if the
 commit is a merge or a `.git/MERGE_MSG` file exists); `squash`
 (if a `.git/SQUASH_MSG` file exists); or `commit`, followed by
-a commit SHA1 (if a `-c`, `-C` or `--amend` option was given).
+a commit SHA-1 (if a `-c`, `-C` or `--amend` option was given).
 
 If the exit status is non-zero, 'git commit' will abort.
 
@@ -108,7 +108,7 @@ it is not suppressed by the `--no-verify` option.  A non-zero exit
 means a failure of the hook and aborts the commit.  It should not
 be used as replacement for pre-commit hook.
 
-The sample `prepare-commit-msg` hook that comes with git comments
+The sample `prepare-commit-msg` hook that comes with Git comments
 out the `Conflicts:` part of a merge's commit message.
 
 commit-msg
@@ -140,9 +140,11 @@ the outcome of 'git commit'.
 pre-rebase
 ~~~~~~~~~~
 
-This hook is called by 'git rebase' and can be used to prevent a branch
-from getting rebased.
-
+This hook is called by 'git rebase' and can be used to prevent a
+branch from getting rebased.  The hook may be called with one or
+two parameters.  The first parameter is the upstream from which
+the series was forked.  The second parameter is the branch being
+rebased, and is not set when rebasing the current branch.
 
 post-checkout
 ~~~~~~~~~~~~~
@@ -175,6 +177,35 @@ This hook can be used in conjunction with a corresponding pre-commit hook to
 save and restore any form of metadata associated with the working tree
 (eg: permissions/ownership, ACLS, etc).  See contrib/hooks/setgitperms.perl
 for an example of how to do this.
+
+pre-push
+~~~~~~~~
+
+This hook is called by 'git push' and can be used to prevent a push from taking
+place.  The hook is called with two parameters which provide the name and
+location of the destination remote, if a named remote is not being used both
+values will be the same.
+
+Information about what is to be pushed is provided on the hook's standard
+input with lines of the form:
+
+  <local ref> SP <local sha1> SP <remote ref> SP <remote sha1> LF
+
+For instance, if the command +git push origin master:foreign+ were run the
+hook would receive a line like the following:
+
+  refs/heads/master 67890 refs/heads/foreign 12345
+
+although the full, 40-character SHA-1s would be supplied.  If the foreign ref
+does not yet exist the `<remote SHA-1>` will be 40 `0`.  If a ref is to be
+deleted, the `<local ref>` will be supplied as `(delete)` and the `<local
+SHA-1>` will be 40 `0`.  If the local commit was specified by something other
+than a name which could be expanded (such as `HEAD~`, or a SHA-1) it will be
+supplied as it was originally given.
+
+If this hook exits with a non-zero status, 'git push' will abort without
+pushing anything.  Information about why the push is rejected may be sent
+to the user by writing to standard error.
 
 [[pre-receive]]
 pre-receive
@@ -275,7 +306,7 @@ for the user.
 
 The default 'post-receive' hook is empty, but there is
 a sample script `post-receive-email` provided in the `contrib/hooks`
-directory in git distribution, which implements sending commit
+directory in Git distribution, which implements sending commit
 emails.
 
 [[post-update]]
@@ -303,7 +334,7 @@ them.
 When enabled, the default 'post-update' hook runs
 'git update-server-info' to keep the information used by dumb
 transports (e.g., HTTP) up-to-date.  If you are publishing
-a git repository that is accessible via HTTP, you should
+a Git repository that is accessible via HTTP, you should
 probably enable this hook.
 
 Both standard output and standard error output are forwarded to
@@ -336,7 +367,7 @@ preceding SP is also omitted.  Currently, no commands pass any
 'extra-info'.
 
 The hook always runs after the automatic note copying (see
-"notes.rewrite.<command>" in linkgit:git-config.txt) has happened, and
+"notes.rewrite.<command>" in linkgit:git-config.txt[1]) has happened, and
 thus has access to these notes.
 
 The following command-specific comments apply:

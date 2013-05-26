@@ -164,7 +164,7 @@ test_expect_success 'bisect start: existing ".git/BISECT_START" not modified if 
 	cp .git/BISECT_START saved &&
 	test_must_fail git bisect start $HASH4 foo -- &&
 	git branch > branch.output &&
-	test_i18ngrep "* (no branch)" branch.output > /dev/null &&
+	test_i18ngrep "* (no branch, bisect started on other)" branch.output > /dev/null &&
 	test_cmp saved .git/BISECT_START
 '
 test_expect_success 'bisect start: no ".git/BISECT_START" if mistaken rev' '
@@ -190,7 +190,7 @@ test_expect_success 'bisect start: no ".git/BISECT_START" if checkout error' '
 # $HASH1 is good, $HASH4 is bad, we skip $HASH3
 # but $HASH2 is bad,
 # so we should find $HASH2 as the first bad commit
-test_expect_success 'bisect skip: successfull result' '
+test_expect_success 'bisect skip: successful result' '
 	git bisect reset &&
 	git bisect start $HASH4 $HASH1 &&
 	git bisect skip &&
@@ -676,9 +676,7 @@ test_expect_success 'bisect fails if tree is broken on trial commit' '
 check_same()
 {
 	echo "Checking $1 is the same as $2" &&
-	git rev-parse "$1" > expected.same &&
-	git rev-parse "$2" > expected.actual &&
-	test_cmp expected.same expected.actual
+	test_cmp_rev "$1" "$2"
 }
 
 test_expect_success 'bisect: --no-checkout - start commit bad' '
@@ -742,5 +740,43 @@ test_expect_success 'bisect: demonstrate identification of damage boundary' "
 	check_same BROKEN_HASH6 bisect/bad &&
 	git bisect reset
 "
+
+cat > expected.bisect-log <<EOF
+# bad: [32a594a3fdac2d57cf6d02987e30eec68511498c] Add <4: Ciao for now> into <hello>.
+# good: [7b7f204a749c3125d5224ed61ea2ae1187ad046f] Add <2: A new day for git> into <hello>.
+git bisect start '32a594a3fdac2d57cf6d02987e30eec68511498c' '7b7f204a749c3125d5224ed61ea2ae1187ad046f'
+# good: [3de952f2416b6084f557ec417709eac740c6818c] Add <3: Another new day for git> into <hello>.
+git bisect good 3de952f2416b6084f557ec417709eac740c6818c
+# first bad commit: [32a594a3fdac2d57cf6d02987e30eec68511498c] Add <4: Ciao for now> into <hello>.
+EOF
+
+test_expect_success 'bisect log: successfull result' '
+	git bisect reset &&
+	git bisect start $HASH4 $HASH2 &&
+	git bisect good &&
+	git bisect log >bisect-log.txt &&
+	test_cmp expected.bisect-log bisect-log.txt &&
+	git bisect reset
+'
+
+cat > expected.bisect-skip-log <<EOF
+# bad: [32a594a3fdac2d57cf6d02987e30eec68511498c] Add <4: Ciao for now> into <hello>.
+# good: [7b7f204a749c3125d5224ed61ea2ae1187ad046f] Add <2: A new day for git> into <hello>.
+git bisect start '32a594a3fdac2d57cf6d02987e30eec68511498c' '7b7f204a749c3125d5224ed61ea2ae1187ad046f'
+# skip: [3de952f2416b6084f557ec417709eac740c6818c] Add <3: Another new day for git> into <hello>.
+git bisect skip 3de952f2416b6084f557ec417709eac740c6818c
+# only skipped commits left to test
+# possible first bad commit: [32a594a3fdac2d57cf6d02987e30eec68511498c] Add <4: Ciao for now> into <hello>.
+# possible first bad commit: [3de952f2416b6084f557ec417709eac740c6818c] Add <3: Another new day for git> into <hello>.
+EOF
+
+test_expect_success 'bisect log: only skip commits left' '
+	git bisect reset &&
+	git bisect start $HASH4 $HASH2 &&
+	test_must_fail git bisect skip &&
+	git bisect log >bisect-skip-log.txt &&
+	test_cmp expected.bisect-skip-log bisect-skip-log.txt &&
+	git bisect reset
+'
 
 test_done

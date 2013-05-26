@@ -26,6 +26,7 @@ use IO::Socket;
 use IO::Pipe;
 use POSIX qw(strftime tzset dup2 ENOENT);
 use IPC::Open2;
+use Git qw(get_tz_offset);
 
 $SIG{'PIPE'}="IGNORE";
 set_timezone('UTC');
@@ -37,7 +38,7 @@ sub usage(;$) {
 	my $msg = shift;
 	print(STDERR "Error: $msg\n") if $msg;
 	print STDERR <<END;
-Usage: git cvsimport     # fetch/update GIT from CVS
+usage: git cvsimport     # fetch/update GIT from CVS
        [-o branch-for-HEAD] [-h] [-v] [-d CVSROOT] [-A author-conv-file]
        [-p opts-for-cvsps] [-P file] [-C GIT_repository] [-z fuzz] [-i] [-k]
        [-u] [-s subst] [-a] [-m] [-M regex] [-S regex] [-L commitlimit]
@@ -864,7 +865,9 @@ sub commit {
 	}
 
 	set_timezone($author_tz);
-	my $commit_date = strftime("%s %z", localtime($date));
+	# $date is in the seconds since epoch format
+	my $tz_offset = get_tz_offset($date);
+	my $commit_date = "$date $tz_offset";
 	set_timezone('UTC');
 	$ENV{GIT_AUTHOR_NAME} = $author_name;
 	$ENV{GIT_AUTHOR_EMAIL} = $author_email;

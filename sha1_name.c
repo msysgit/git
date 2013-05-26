@@ -594,7 +594,7 @@ struct object *peel_to_type(const char *name, int namelen,
 	while (1) {
 		if (!o || (!o->parsed && !parse_object(o->sha1)))
 			return NULL;
-		if (o->type == expected_type)
+		if (expected_type == OBJ_ANY || o->type == expected_type)
 			return o;
 		if (o->type == OBJ_TAG)
 			o = ((struct tag*) o)->tagged;
@@ -645,6 +645,8 @@ static int peel_onion(const char *name, int len, unsigned char *sha1)
 		expected_type = OBJ_TREE;
 	else if (!strncmp(blob_type, sp, 4) && sp[4] == '}')
 		expected_type = OBJ_BLOB;
+	else if (!prefixcmp(sp, "object}"))
+		expected_type = OBJ_ANY;
 	else if (sp[0] == '}')
 		expected_type = OBJ_NONE;
 	else if (sp[0] == '/')
@@ -654,6 +656,8 @@ static int peel_onion(const char *name, int len, unsigned char *sha1)
 
 	if (expected_type == OBJ_COMMIT)
 		lookup_flags = GET_SHA1_COMMITTISH;
+	else if (expected_type == OBJ_TREE)
+		lookup_flags = GET_SHA1_TREEISH;
 
 	if (get_sha1_1(name, sp - name - 2, outer, lookup_flags))
 		return -1;
@@ -856,8 +860,8 @@ static int get_sha1_oneline(const char *prefix, unsigned char *sha1,
 }
 
 struct grab_nth_branch_switch_cbdata {
-	long cnt, alloc;
-	struct strbuf *buf;
+	int remaining;
+	struct strbuf buf;
 };
 
 static int grab_nth_branch_switch(unsigned char *osha1, unsigned char *nsha1,
@@ -867,7 +871,6 @@ static int grab_nth_branch_switch(unsigned char *osha1, unsigned char *nsha1,
 	struct grab_nth_branch_switch_cbdata *cb = cb_data;
 	const char *match = NULL, *target = NULL;
 	size_t len;
-	int nth;
 
 	if (!prefixcmp(message, "checkout: moving from ")) {
 		match = message + strlen("checkout: moving from ");
@@ -876,11 +879,12 @@ static int grab_nth_branch_switch(unsigned char *osha1, unsigned char *nsha1,
 
 	if (!match || !target)
 		return 0;
-
-	len = target - match;
-	nth = cb->cnt++ % cb->alloc;
-	strbuf_reset(&cb->buf[nth]);
-	strbuf_add(&cb->buf[nth], match, len);
+	if (--(cb->remaining) == 0) {
+		len = target - match;
+		strbuf_reset(&cb->buf);
+		strbuf_add(&cb->buf, match, len);
+		return 1; /* we are done */
+	}
 	return 0;
 }
 
@@ -891,7 +895,7 @@ static int grab_nth_branch_switch(unsigned char *osha1, unsigned char *nsha1,
 static int interpret_nth_prior_checkout(const char *name, struct strbuf *buf)
 {
 	long nth;
-	int i, retval;
+	int retval;
 	struct grab_nth_branch_switch_cbdata cb;
 	const char *brace;
 	char *num_end;
@@ -901,34 +905,22 @@ static int interpret_nth_prior_checkout(const char *name, struct strbuf *buf)
 	brace = strchr(name, '}');
 	if (!brace)
 		return -1;
-	nth = strtol(name+3, &num_end, 10);
+	nth = strtol(name + 3, &num_end, 10);
 	if (num_end != brace)
 		return -1;
 	if (nth <= 0)
 		return -1;
-	cb.alloc = nth;
-	cb.buf = xmalloc(nth * sizeof(struct strbuf));
-	for (i = 0; i < nth; i++)
-		strbuf_init(&cb.buf[i], 20);
-	cb.cnt = 0;
+	cb.remaining = nth;
+	strbuf_init(&cb.buf, 20);
+
 	retval = 0;
-	for_each_recent_reflog_ent("HEAD", grab_nth_branch_switch, 40960, &cb);
-	if (cb.cnt < nth) {
-		cb.cnt = 0;
-		for_each_reflog_ent("HEAD", grab_nth_branch_switch, &cb);
+	if (0 < for_each_reflog_ent_reverse("HEAD", grab_nth_branch_switch, &cb)) {
+		strbuf_reset(buf);
+		strbuf_add(buf, cb.buf.buf, cb.buf.len);
+		retval = brace - name + 1;
 	}
-	if (cb.cnt < nth)
-		goto release_return;
-	i = cb.cnt % nth;
-	strbuf_reset(buf);
-	strbuf_add(buf, cb.buf[i].buf, cb.buf[i].len);
-	retval = brace-name+1;
 
-release_return:
-	for (i = 0; i < nth; i++)
-		strbuf_release(&cb.buf[i]);
-	free(cb.buf);
-
+	strbuf_release(&cb.buf);
 	return retval;
 }
 
@@ -1137,7 +1129,8 @@ int get_sha1_blob(const char *name, unsigned char *sha1)
 static void diagnose_invalid_sha1_path(const char *prefix,
 				       const char *filename,
 				       const unsigned char *tree_sha1,
-				       const char *object_name)
+				       const char *object_name,
+				       int object_name_len)
 {
 	struct stat st;
 	unsigned char sha1[20];
@@ -1147,8 +1140,8 @@ static void diagnose_invalid_sha1_path(const char *prefix,
 		prefix = "";
 
 	if (!lstat(filename, &st))
-		die("Path '%s' exists on disk, but not in '%s'.",
-		    filename, object_name);
+		die("Path '%s' exists on disk, but not in '%.*s'.",
+		    filename, object_name_len, object_name);
 	if (errno == ENOENT || errno == ENOTDIR) {
 		char *fullname = xmalloc(strlen(filename)
 					     + strlen(prefix) + 1);
@@ -1158,16 +1151,16 @@ static void diagnose_invalid_sha1_path(const char *prefix,
 		if (!get_tree_entry(tree_sha1, fullname,
 				    sha1, &mode)) {
 			die("Path '%s' exists, but not '%s'.\n"
-			    "Did you mean '%s:%s' aka '%s:./%s'?",
+			    "Did you mean '%.*s:%s' aka '%.*s:./%s'?",
 			    fullname,
 			    filename,
-			    object_name,
+			    object_name_len, object_name,
 			    fullname,
-			    object_name,
+			    object_name_len, object_name,
 			    filename);
 		}
-		die("Path '%s' does not exist in '%s'",
-		    filename, object_name);
+		die("Path '%s' does not exist in '%.*s'",
+		    filename, object_name_len, object_name);
 	}
 }
 
@@ -1332,13 +1325,8 @@ static int get_sha1_with_context_1(const char *name,
 	}
 	if (*cp == ':') {
 		unsigned char tree_sha1[20];
-		char *object_name = NULL;
-		if (only_to_die) {
-			object_name = xmalloc(cp-name+1);
-			strncpy(object_name, name, cp-name);
-			object_name[cp-name] = '\0';
-		}
-		if (!get_sha1_1(name, cp-name, tree_sha1, GET_SHA1_TREEISH)) {
+		int len = cp - name;
+		if (!get_sha1_1(name, len, tree_sha1, GET_SHA1_TREEISH)) {
 			const char *filename = cp+1;
 			char *new_filename = NULL;
 
@@ -1348,8 +1336,8 @@ static int get_sha1_with_context_1(const char *name,
 			ret = get_tree_entry(tree_sha1, filename, sha1, &oc->mode);
 			if (ret && only_to_die) {
 				diagnose_invalid_sha1_path(prefix, filename,
-							   tree_sha1, object_name);
-				free(object_name);
+							   tree_sha1,
+							   name, len);
 			}
 			hashcpy(oc->tree, tree_sha1);
 			strncpy(oc->path, filename,
@@ -1360,7 +1348,7 @@ static int get_sha1_with_context_1(const char *name,
 			return ret;
 		} else {
 			if (only_to_die)
-				die("Invalid object name '%s'.", object_name);
+				die("Invalid object name '%.*s'.", len, name);
 		}
 	}
 	return ret;

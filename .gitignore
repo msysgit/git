@@ -1,7 +1,6 @@
 /GIT-BUILD-OPTIONS
 /GIT-CFLAGS
 /GIT-LDFLAGS
-/GIT-GUI-VARS
 /GIT-PREFIX
 /GIT-PYTHON-VARS
 /GIT-SCRIPT-DEFINES
@@ -23,6 +22,7 @@
 /git-bundle
 /git-cat-file
 /git-check-attr
+/git-check-ignore
 /git-check-ref-format
 /git-checkout
 /git-checkout-index
@@ -125,9 +125,8 @@
 /git-remote-ftps
 /git-remote-fd
 /git-remote-ext
-/git-remote-testgit
+/git-remote-testpy
 /git-remote-testsvn
-/git-remote-hg
 /git-repack
 /git-replace
 /git-repo-config
@@ -173,7 +172,6 @@
 /git-whatchanged
 /git-write-tree
 /git-core-*/?*
-/gitk-git/gitk-wish
 /gitweb/GITWEB-BUILD-OPTIONS
 /gitweb/gitweb.cgi
 /gitweb/static/gitweb.js
@@ -200,6 +198,7 @@
 /test-string-list
 /test-subprocess
 /test-svn-fe
+/test-wildmatch
 /common-cmds.h
 *.tar.gz
 *.dsc

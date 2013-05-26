@@ -10,7 +10,7 @@ SYNOPSIS
 --------
 [verse]
 'git archive' [--format=<fmt>] [--list] [--prefix=<prefix>/] [<extra>]
-	      [-o | --output=<file>] [--worktree-attributes]
+	      [-o <file> | --output=<file>] [--worktree-attributes]
 	      [--remote=<repo> [--exec=<git-upload-archive>]] <tree-ish>
 	      [<path>...]
 
@@ -56,7 +56,8 @@ OPTIONS
 	Write the archive to <file> instead of stdout.
 
 --worktree-attributes::
-	Look for attributes in .gitattributes in working directory too.
+	Look for attributes in .gitattributes files in the working tree
+	as well (see <<ATTRIBUTES>>).
 
 <extra>::
 	This can be any options that the archiver backend understands.
@@ -120,6 +121,7 @@ tar.<format>.remote::
 	user-defined formats, but true for the "tar.gz" and "tgz"
 	formats.
 
+[[ATTRIBUTES]]
 ATTRIBUTES
 ----------
 
@@ -128,7 +130,7 @@ export-ignore::
 	added to archive files.  See linkgit:gitattributes[5] for details.
 
 export-subst::
-	If the attribute export-subst is set for a file then git will
+	If the attribute export-subst is set for a file then Git will
 	expand several placeholders when adding this file to an archive.
 	See linkgit:gitattributes[5] for details.
 

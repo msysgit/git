@@ -90,7 +90,7 @@ unset VISUAL EMAIL LANGUAGE COLUMNS $("$PERL_PATH" -e '
 		PROVE
 		VALGRIND
 		UNZIP
-		PERF_AGGREGATING_LATER
+		PERF_
 	));
 	my @vars = grep(/^GIT_/ && !/^GIT_($ok)/o, @env);
 	print join("\n", @vars);
@@ -197,7 +197,11 @@ do
 	--no-color)
 		color=; shift ;;
 	--va|--val|--valg|--valgr|--valgri|--valgrin|--valgrind)
-		valgrind=t; verbose=t; shift ;;
+		valgrind=memcheck
+		shift ;;
+	--valgrind=*)
+		valgrind=$(expr "z$1" : 'z[^=]*=\(.*\)')
+		shift ;;
 	--tee)
 		shift ;; # was handled already
 	--root=*)
@@ -207,6 +211,8 @@ do
 		echo "error: unknown test option '$1'" >&2; exit 1 ;;
 	esac
 done
+
+test -n "$valgrind" && verbose=t
 
 if test -n "$color"
 then
@@ -218,11 +224,13 @@ then
 		error)
 			tput bold; tput setaf 1;; # bold red
 		skip)
-			tput bold; tput setaf 2;; # bold green
+			tput setaf 4;; # blue
+		warn)
+			tput setaf 3;; # brown/yellow
 		pass)
-			tput setaf 2;;            # green
+			tput setaf 2;; # green
 		info)
-			tput setaf 3;;            # brown
+			tput setaf 6;; # cyan
 		*)
 			test -n "$quiet" && return;;
 		esac
@@ -304,7 +312,7 @@ test_ok_ () {
 
 test_failure_ () {
 	test_failure=$(($test_failure + 1))
-	say_color error "not ok - $test_count $1"
+	say_color error "not ok $test_count - $1"
 	shift
 	echo "$@" | sed -e 's/^/#	/'
 	test "$immediate" = "" || { GIT_EXIT_OK=t; exit 1; }
@@ -312,12 +320,12 @@ test_failure_ () {
 
 test_known_broken_ok_ () {
 	test_fixed=$(($test_fixed+1))
-	say_color "" "ok $test_count - $@ # TODO known breakage"
+	say_color error "ok $test_count - $@ # TODO known breakage vanished"
 }
 
 test_known_broken_failure_ () {
 	test_broken=$(($test_broken+1))
-	say_color skip "not ok $test_count - $@ # TODO known breakage"
+	say_color warn "not ok $test_count - $@ # TODO known breakage"
 }
 
 test_debug () {
@@ -410,13 +418,18 @@ test_done () {
 
 	if test "$test_fixed" != 0
 	then
-		say_color pass "# fixed $test_fixed known breakage(s)"
+		say_color error "# $test_fixed known breakage(s) vanished; please update test(s)"
 	fi
 	if test "$test_broken" != 0
 	then
-		say_color error "# still have $test_broken known breakage(s)"
-		msg="remaining $(($test_count-$test_broken)) test(s)"
+		say_color warn "# still have $test_broken known breakage(s)"
+	fi
+	if test "$test_broken" != 0 || test "$test_fixed" != 0
+	then
+		test_remaining=$(( $test_count - $test_broken - $test_fixed ))
+		msg="remaining $test_remaining test(s)"
 	else
+		test_remaining=$test_count
 		msg="$test_count test(s)"
 	fi
 	case "$test_failure" in
@@ -430,7 +443,7 @@ test_done () {
 
 		if test $test_external_has_tap -eq 0
 		then
-			if test $test_count -gt 0
+			if test $test_remaining -gt 0
 			then
 				say_color pass "# passed all $msg"
 			fi
@@ -527,6 +540,8 @@ then
 	PATH=$GIT_VALGRIND/bin:$PATH
 	GIT_EXEC_PATH=$GIT_VALGRIND/bin
 	export GIT_VALGRIND
+	GIT_VALGRIND_MODE="$valgrind"
+	export GIT_VALGRIND_MODE
 elif test -n "$GIT_TEST_INSTALLED"
 then
 	GIT_EXEC_PATH=$($GIT_TEST_INSTALLED/git --exec-path)  ||
@@ -589,14 +604,14 @@ then
 fi
 
 # Test repository
-test="trash directory.$(basename "$0" .sh)"
-test -n "$root" && test="$root/$test"
-case "$test" in
-/*) TRASH_DIRECTORY="$test" ;;
- *) TRASH_DIRECTORY="$TEST_OUTPUT_DIRECTORY/$test" ;;
+TRASH_DIRECTORY="trash directory.$(basename "$0" .sh)"
+test -n "$root" && TRASH_DIRECTORY="$root/$TRASH_DIRECTORY"
+case "$TRASH_DIRECTORY" in
+/*) ;; # absolute path is good
+ *) TRASH_DIRECTORY="$TEST_OUTPUT_DIRECTORY/$TRASH_DIRECTORY" ;;
 esac
 test ! -z "$debug" || remove_trash=$TRASH_DIRECTORY
-rm -fr "$test" || {
+rm -fr "$TRASH_DIRECTORY" || {
 	GIT_EXIT_OK=t
 	echo >&5 "FATAL: Cannot prepare test area"
 	exit 1
@@ -607,13 +622,13 @@ export HOME
 
 if test -z "$TEST_NO_CREATE_REPO"
 then
-	test_create_repo "$test"
+	test_create_repo "$TRASH_DIRECTORY"
 else
-	mkdir -p "$test"
+	mkdir -p "$TRASH_DIRECTORY"
 fi
 # Use -P to resolve symlinks in our working directory so that the cwd
 # in subprocesses like git equals our $PWD (for pathname comparisons).
-cd -P "$test" || exit 1
+cd -P "$TRASH_DIRECTORY" || exit 1
 
 this_test=${0##*/}
 this_test=${this_test%%-*}
@@ -621,7 +636,7 @@ for skp in $GIT_SKIP_TESTS
 do
 	case "$this_test" in
 	$skp)
-		say_color skip >&3 "skipping test $this_test altogether"
+		say_color info >&3 "skipping test $this_test altogether"
 		skip_all="skip all tests in $this_test"
 		test_done
 	esac
@@ -663,12 +678,14 @@ case $(uname -s) in
 	# backslashes in pathspec are converted to '/'
 	# exec does not inherit the PID
 	test_set_prereq MINGW
+	test_set_prereq NOT_CYGWIN
 	test_set_prereq SED_STRIPS_CR
 	;;
 *CYGWIN*)
 	test_set_prereq POSIXPERM
 	test_set_prereq EXECKEEPSPID
 	test_set_prereq NOT_MINGW
+	test_set_prereq CYGWIN
 	test_set_prereq SED_STRIPS_CR
 	;;
 *)
@@ -676,6 +693,7 @@ case $(uname -s) in
 	test_set_prereq BSLASHPSPEC
 	test_set_prereq EXECKEEPSPID
 	test_set_prereq NOT_MINGW
+	test_set_prereq NOT_CYGWIN
 	;;
 esac
 
@@ -733,6 +751,11 @@ test_i18ngrep () {
 	fi
 }
 
+test_lazy_prereq PIPE '
+	# test whether the filesystem supports FIFOs
+	rm -f testfifo && mkfifo testfifo
+'
+
 test_lazy_prereq SYMLINKS '
 	# test whether the filesystem supports symbolic links
 	ln -s x y && test -h y
@@ -766,3 +789,9 @@ test_lazy_prereq AUTOIDENT '
 # When the tests are run as root, permission tests will report that
 # things are writable when they shouldn't be.
 test -w / || test_set_prereq SANITY
+
+GIT_UNZIP=${GIT_UNZIP:-unzip}
+test_lazy_prereq UNZIP '
+	"$GIT_UNZIP" -v
+	test $? -ne 127
+'

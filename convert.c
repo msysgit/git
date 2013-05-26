@@ -153,36 +153,13 @@ static void check_safe_crlf(const char *path, enum crlf_action crlf_action,
 
 static int has_cr_in_index(const char *path)
 {
-	int pos, len;
 	unsigned long sz;
-	enum object_type type;
 	void *data;
 	int has_cr;
-	struct index_state *istate = &the_index;
 
-	len = strlen(path);
-	pos = index_name_pos(istate, path, len);
-	if (pos < 0) {
-		/*
-		 * We might be in the middle of a merge, in which
-		 * case we would read stage #2 (ours).
-		 */
-		int i;
-		for (i = -pos - 1;
-		     (pos < 0 && i < istate->cache_nr &&
-		      !strcmp(istate->cache[i]->name, path));
-		     i++)
-			if (ce_stage(istate->cache[i]) == 2)
-				pos = i;
-	}
-	if (pos < 0)
+	data = read_blob_data_from_cache(path, &sz);
+	if (!data)
 		return 0;
-	data = read_sha1_file(istate->cache[pos]->sha1, &type, &sz);
-	if (!data || type != OBJ_BLOB) {
-		free(data);
-		return 0;
-	}
-
 	has_cr = memchr(data, '\r', sz) != NULL;
 	free(data);
 	return has_cr;
@@ -457,7 +434,7 @@ static struct convert_driver {
 
 static int read_convert_config(const char *var, const char *value, void *cb)
 {
-	const char *ep, *name;
+	const char *key, *name;
 	int namelen;
 	struct convert_driver *drv;
 
@@ -465,10 +442,8 @@ static int read_convert_config(const char *var, const char *value, void *cb)
 	 * External conversion drivers are configured using
 	 * "filter.<name>.variable".
 	 */
-	if (prefixcmp(var, "filter.") || (ep = strrchr(var, '.')) == var + 6)
+	if (parse_config_key(var, "filter", &name, &namelen, &key) < 0 || !name)
 		return 0;
-	name = var + 7;
-	namelen = ep - name;
 	for (drv = user_convert; drv; drv = drv->next)
 		if (!strncmp(drv->name, name, namelen) && !drv->name[namelen])
 			break;
@@ -479,8 +454,6 @@ static int read_convert_config(const char *var, const char *value, void *cb)
 		user_convert_tail = &(drv->next);
 	}
 
-	ep++;
-
 	/*
 	 * filter.<name>.smudge and filter.<name>.clean specifies
 	 * the command line:
@@ -490,13 +463,13 @@ static int read_convert_config(const char *var, const char *value, void *cb)
 	 * The command-line will not be interpolated in any way.
 	 */
 
-	if (!strcmp("smudge", ep))
+	if (!strcmp("smudge", key))
 		return git_config_string(&drv->smudge, var, value);
 
-	if (!strcmp("clean", ep))
+	if (!strcmp("clean", key))
 		return git_config_string(&drv->clean, var, value);
 
-	if (!strcmp("required", ep)) {
+	if (!strcmp("required", key)) {
 		drv->required = git_config_bool(var, value);
 		return 0;
 	}

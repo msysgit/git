@@ -1,5 +1,5 @@
 Like other projects, we also have some guidelines to keep to the
-code.  For git in general, three rough rules are:
+code.  For Git in general, three rough rules are:
 
  - Most importantly, we never say "It's in POSIX; we'll happily
    ignore your needs should your system not conform to it."
@@ -18,11 +18,12 @@ code.  For git in general, three rough rules are:
    judgement call, the decision based more on real world
    constraints people face than what the paper standard says.
 
+Make your code readable and sensible, and don't try to be clever.
 
 As for more concrete guidelines, just imitate the existing code
 (this is a good guideline, no matter which project you are
 contributing to). It is always preferable to match the _local_
-convention. New code added to git suite is expected to match
+convention. New code added to Git suite is expected to match
 the overall style of existing code. Modifications to existing
 code is expected to match the style the surrounding code already
 uses (even if it doesn't match the overall style of existing code).
@@ -112,7 +113,7 @@ For C programs:
 
  - We try to keep to at most 80 characters per line.
 
- - We try to support a wide range of C compilers to compile git with,
+ - We try to support a wide range of C compilers to compile Git with,
    including old ones. That means that you should not use C99
    initializers, even if a lot of compilers grok it.
 
@@ -164,14 +165,14 @@ For C programs:
 
  - If you are planning a new command, consider writing it in shell
    or perl first, so that changes in semantics can be easily
-   changed and discussed.  Many git commands started out like
+   changed and discussed.  Many Git commands started out like
    that, and a few are still scripts.
 
- - Avoid introducing a new dependency into git. This means you
+ - Avoid introducing a new dependency into Git. This means you
    usually should stay away from scripting languages not already
-   used in the git core command set (unless your command is clearly
+   used in the Git core command set (unless your command is clearly
    separate from it, such as an importer to convert random-scm-X
-   repositories to git).
+   repositories to Git).
 
  - When we pass <string, length> pair to functions, we should try to
    pass them in that order.
@@ -179,7 +180,67 @@ For C programs:
  - Use Git's gettext wrappers to make the user interface
    translatable. See "Marking strings for translation" in po/README.
 
+For Perl programs:
+
+ - Most of the C guidelines above apply.
+
+ - We try to support Perl 5.8 and later ("use Perl 5.008").
+
+ - use strict and use warnings are strongly preferred.
+
+ - Don't overuse statement modifiers unless using them makes the
+   result easier to follow.
+
+	... do something ...
+	do_this() unless (condition);
+        ... do something else ...
+
+   is more readable than:
+
+	... do something ...
+	unless (condition) {
+		do_this();
+	}
+        ... do something else ...
+
+   *only* when the condition is so rare that do_this() will be almost
+   always called.
+
+ - We try to avoid assignments inside "if ()" conditions.
+
+ - Learn and use Git.pm if you need that functionality.
+
+ - For Emacs, it's useful to put the following in
+   GIT_CHECKOUT/.dir-locals.el, assuming you use cperl-mode:
+
+    ;; note the first part is useful for C editing, too
+    ((nil . ((indent-tabs-mode . t)
+                  (tab-width . 8)
+                  (fill-column . 80)))
+     (cperl-mode . ((cperl-indent-level . 8)
+                    (cperl-extra-newline-before-brace . nil)
+                    (cperl-merge-trailing-else . t))))
+
+For Python scripts:
+
+ - We follow PEP-8 (http://www.python.org/dev/peps/pep-0008/).
+
+ - As a minimum, we aim to be compatible with Python 2.6 and 2.7.
+
+ - Where required libraries do not restrict us to Python 2, we try to
+   also be compatible with Python 3.1 and later.
+
+ - When you must differentiate between Unicode literals and byte string
+   literals, it is OK to use the 'b' prefix.  Even though the Python
+   documentation for version 2.6 does not mention this prefix, it has
+   been supported since version 2.6.0.
+
 Writing Documentation:
+
+ Most (if not all) of the documentation pages are written in the
+ AsciiDoc format in *.txt files (e.g. Documentation/git.txt), and
+ processed into HTML and manpages (e.g. git.html and git.1 in the
+ same directory).
 
  Every user-visible change should be reflected in the documentation.
  The same general rule as for code applies -- imitate the existing
@@ -230,3 +291,8 @@ Writing Documentation:
    valid usage.  "*" has its own pair of brackets, because it can
    (optionally) be specified only when one or more of the letters is
    also provided.
+
+  A note on notation:
+   Use 'git' (all lowercase) when talking about commands i.e. something
+   the user would type into a shell and use 'Git' (uppercase first letter)
+   when talking about the version control system and its properties.

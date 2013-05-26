@@ -35,6 +35,7 @@ static int error_unmatch;
 static char *ps_matched;
 static const char *with_tree;
 static int exc_given;
+static int exclude_args;
 
 static const char *tag_cached = "";
 static const char *tag_unmerged = "";
@@ -200,19 +201,15 @@ static void show_ru_info(void)
 	}
 }
 
-static int ce_excluded(struct path_exclude_check *check, struct cache_entry *ce)
+static int ce_excluded(struct dir_struct *dir, struct cache_entry *ce)
 {
 	int dtype = ce_to_dtype(ce);
-	return path_excluded(check, ce->name, ce_namelen(ce), &dtype);
+	return is_excluded(dir, ce->name, &dtype);
 }
 
 static void show_files(struct dir_struct *dir)
 {
 	int i;
-	struct path_exclude_check check;
-
-	if ((dir->flags & DIR_SHOW_IGNORED))
-		path_exclude_check_init(&check, dir);
 
 	/* For cached/deleted files we don't need to even do the readdir */
 	if (show_others || show_killed) {
@@ -226,7 +223,7 @@ static void show_files(struct dir_struct *dir)
 		for (i = 0; i < active_nr; i++) {
 			struct cache_entry *ce = active_cache[i];
 			if ((dir->flags & DIR_SHOW_IGNORED) &&
-			    !ce_excluded(&check, ce))
+			    !ce_excluded(dir, ce))
 				continue;
 			if (show_unmerged && !ce_stage(ce))
 				continue;
@@ -242,7 +239,7 @@ static void show_files(struct dir_struct *dir)
 			struct stat st;
 			int err;
 			if ((dir->flags & DIR_SHOW_IGNORED) &&
-			    !ce_excluded(&check, ce))
+			    !ce_excluded(dir, ce))
 				continue;
 			if (ce->ce_flags & CE_UPDATE)
 				continue;
@@ -255,9 +252,6 @@ static void show_files(struct dir_struct *dir)
 				show_ce_entry(tag_modified, ce);
 		}
 	}
-
-	if ((dir->flags & DIR_SHOW_IGNORED))
-		path_exclude_check_clear(&check);
 }
 
 /*
@@ -337,7 +331,7 @@ void overlay_tree_on_cache(const char *tree_name, const char *prefix)
 		matchbuf[0] = prefix;
 		matchbuf[1] = NULL;
 		init_pathspec(&pathspec, matchbuf);
-		pathspec.items[0].use_wildcard = 0;
+		pathspec.items[0].nowildcard_len = pathspec.items[0].len;
 	} else
 		init_pathspec(&pathspec, NULL);
 	if (read_tree(tree, 1, &pathspec))
@@ -420,10 +414,10 @@ static int option_parse_z(const struct option *opt,
 static int option_parse_exclude(const struct option *opt,
 				const char *arg, int unset)
 {
-	struct exclude_list *list = opt->value;
+	struct string_list *exclude_list = opt->value;
 
 	exc_given = 1;
-	add_exclude(arg, "", 0, list);
+	string_list_append(exclude_list, arg);
 
 	return 0;
 }
@@ -452,9 +446,11 @@ static int option_parse_exclude_standard(const struct option *opt,
 
 int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 {
-	int require_work_tree = 0, show_tag = 0;
+	int require_work_tree = 0, show_tag = 0, i;
 	const char *max_prefix;
 	struct dir_struct dir;
+	struct exclude_list *el;
+	struct string_list exclude_list = STRING_LIST_INIT_NODUP;
 	struct option builtin_ls_files_options[] = {
 		{ OPTION_CALLBACK, 'z', NULL, NULL, NULL,
 			N_("paths are separated with NUL character"),
@@ -488,7 +484,7 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 			N_("show unmerged files in the output")),
 		OPT_BOOLEAN(0, "resolve-undo", &show_resolve_undo,
 			    N_("show resolve-undo information")),
-		{ OPTION_CALLBACK, 'x', "exclude", &dir.exclude_list[EXC_CMDL], N_("pattern"),
+		{ OPTION_CALLBACK, 'x', "exclude", &exclude_list, N_("pattern"),
 			N_("skip files matching pattern"),
 			0, option_parse_exclude },
 		{ OPTION_CALLBACK, 'X', "exclude-from", &dir, N_("file"),
@@ -525,6 +521,10 @@ int cmd_ls_files(int argc, const char **argv, const char *cmd_prefix)
 
 	argc = parse_options(argc, argv, prefix, builtin_ls_files_options,
 			ls_files_usage, 0);
+	el = add_exclude_list(&dir, EXC_CMDL, "--exclude option");
+	for (i = 0; i < exclude_list.nr; i++) {
+		add_exclude(exclude_list.items[i].string, "", 0, el, --exclude_args);
+	}
 	if (show_tag || show_valid_bit) {
 		tag_cached = "H ";
 		tag_unmerged = "M ";

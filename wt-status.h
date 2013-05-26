@@ -69,6 +69,7 @@ struct wt_status {
 	struct string_list change;
 	struct string_list untracked;
 	struct string_list ignored;
+	uint32_t untracked_in_ms;
 };
 
 struct wt_status_state {
@@ -79,11 +80,18 @@ struct wt_status_state {
 	int rebase_interactive_in_progress;
 	int cherry_pick_in_progress;
 	int bisect_in_progress;
+	int revert_in_progress;
+	char *branch;
+	char *onto;
+	char *detached_from;
+	unsigned char detached_sha1[20];
+	unsigned char revert_head_sha1[20];
 };
 
 void wt_status_prepare(struct wt_status *s);
 void wt_status_print(struct wt_status *s);
 void wt_status_collect(struct wt_status *s);
+void wt_status_get_state(struct wt_status_state *state, int get_detached_from);
 
 void wt_shortstatus_print(struct wt_status *s);
 void wt_porcelain_print(struct wt_status *s);

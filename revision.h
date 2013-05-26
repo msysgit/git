@@ -135,14 +135,16 @@ struct rev_info {
 	const char	*mime_boundary;
 	const char	*patch_suffix;
 	int		numbered_files;
+	int		reroll_count;
 	char		*message_id;
 	struct string_list *ref_message_ids;
-	const char	*add_signoff;
+	int		add_signoff;
 	const char	*extra_headers;
 	const char	*log_reencode;
 	const char	*subject_prefix;
 	int		no_inline;
 	int		show_log_size;
+	struct string_list *mailmap;
 
 	/* Filter by commit log message */
 	struct grep_opt	grep_filter;

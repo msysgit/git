@@ -13,6 +13,7 @@
 
 int trust_executable_bit = 1;
 int trust_ctime = 1;
+int check_stat = 1;
 int has_symlinks = 1;
 int minimum_abbrev = 4, default_abbrev = 7;
 int ignore_case;
@@ -63,6 +64,12 @@ struct startup_info *startup_info;
 unsigned long pack_size_limit_cfg;
 enum hide_dotfiles_type hide_dotfiles = HIDE_DOTFILES_DOTGITONLY;
 
+/*
+ * The character that begins a commented line in user-editable file
+ * that is subject to stripspace.
+ */
+char comment_line_char = '#';
+
 /* Parallel index stat data preload? */
 int core_preload_index = 0;
 
@@ -77,20 +84,20 @@ static const char *git_dir;
 static char *git_object_dir, *git_index_file, *git_graft_file;
 
 /*
- * Repository-local GIT_* environment variables
- * Remember to update local_repo_env_size in cache.h when
- * the size of the list changes
+ * Repository-local GIT_* environment variables; see cache.h for details.
  */
-const char * const local_repo_env[LOCAL_REPO_ENV_SIZE + 1] = {
+const char * const local_repo_env[] = {
 	ALTERNATE_DB_ENVIRONMENT,
 	CONFIG_ENVIRONMENT,
 	CONFIG_DATA_ENVIRONMENT,
 	DB_ENVIRONMENT,
 	GIT_DIR_ENVIRONMENT,
 	GIT_WORK_TREE_ENVIRONMENT,
+	GIT_IMPLICIT_WORK_TREE_ENVIRONMENT,
 	GRAFT_ENVIRONMENT,
 	INDEX_ENVIRONMENT,
 	NO_REPLACE_OBJECTS_ENVIRONMENT,
+	GIT_PREFIX_ENVIRONMENT,
 	NULL
 };
 

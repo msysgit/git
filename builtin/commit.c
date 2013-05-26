@@ -31,12 +31,12 @@
 #include "sequencer.h"
 
 static const char * const builtin_commit_usage[] = {
-	N_("git commit [options] [--] <filepattern>..."),
+	N_("git commit [options] [--] <pathspec>..."),
 	NULL
 };
 
 static const char * const builtin_status_usage[] = {
-	N_("git status [options] [--] <filepattern>..."),
+	N_("git status [options] [--] <pathspec>..."),
 	NULL
 };
 
@@ -103,7 +103,7 @@ static enum {
 	CLEANUP_NONE,
 	CLEANUP_ALL
 } cleanup_mode;
-static char *cleanup_arg;
+static const char *cleanup_arg;
 
 static enum commit_whence whence;
 static int use_editor = 1, include_status = 1;
@@ -124,8 +124,10 @@ static int opt_parse_m(const struct option *opt, const char *arg, int unset)
 	if (unset)
 		strbuf_setlen(buf, 0);
 	else {
+		if (buf->len)
+			strbuf_addch(buf, '\n');
 		strbuf_addstr(buf, arg);
-		strbuf_addstr(buf, "\n\n");
+		strbuf_complete_line(buf);
 	}
 	return 0;
 }
@@ -700,7 +702,7 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 			previous = eol;
 		}
 
-		append_signoff(&sb, ignore_footer);
+		append_signoff(&sb, ignore_footer, 0);
 	}
 
 	if (fwrite(sb.buf, 1, sb.len, s->fp) < sb.len)
@@ -733,15 +735,15 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 		if (cleanup_mode == CLEANUP_ALL)
 			status_printf(s, GIT_COLOR_NORMAL,
 				_("Please enter the commit message for your changes."
-				" Lines starting\nwith '#' will be ignored, and an empty"
-				" message aborts the commit.\n"));
+				  " Lines starting\nwith '%c' will be ignored, and an empty"
+				  " message aborts the commit.\n"), comment_line_char);
 		else /* CLEANUP_SPACE, that is. */
 			status_printf(s, GIT_COLOR_NORMAL,
 				_("Please enter the commit message for your changes."
-				" Lines starting\n"
-				"with '#' will be kept; you may remove them"
-				" yourself if you want to.\n"
-				"An empty message aborts the commit.\n"));
+				  " Lines starting\n"
+				  "with '%c' will be kept; you may remove them"
+				  " yourself if you want to.\n"
+				  "An empty message aborts the commit.\n"), comment_line_char);
 		if (only_include_assumed)
 			status_printf_ln(s, GIT_COLOR_NORMAL,
 					"%s", only_include_assumed);
@@ -946,24 +948,14 @@ static void handle_untracked_files_arg(struct wt_status *s)
 
 static const char *read_commit_message(const char *name)
 {
-	const char *out_enc, *out;
+	const char *out_enc;
 	struct commit *commit;
 
 	commit = lookup_commit_reference_by_name(name);
 	if (!commit)
 		die(_("could not lookup commit %s"), name);
 	out_enc = get_commit_output_encoding();
-	out = logmsg_reencode(commit, out_enc);
-
-	/*
-	 * If we failed to reencode the buffer, just copy it
-	 * byte for byte so the user can try to fix it up.
-	 * This also handles the case where input and output
-	 * encodings are identical.
-	 */
-	if (out == NULL)
-		out = xstrdup(commit->buffer);
-	return out;
+	return logmsg_reencode(commit, NULL, out_enc);
 }
 
 static int parse_and_validate_options(int argc, const char *argv[],
@@ -1320,14 +1312,14 @@ static int git_commit_config(const char *k, const char *v, void *cb)
 		include_status = git_config_bool(k, v);
 		return 0;
 	}
+	if (!strcmp(k, "commit.cleanup"))
+		return git_config_string(&cleanup_arg, k, v);
 
 	status = git_gpg_config(k, v, NULL);
 	if (status)
 		return status;
 	return git_status_config(k, v, s);
 }
-
-static const char post_rewrite_hook[] = "hooks/post-rewrite";
 
 static int run_rewrite_hook(const unsigned char *oldsha1,
 			    const unsigned char *newsha1)
@@ -1339,10 +1331,10 @@ static int run_rewrite_hook(const unsigned char *oldsha1,
 	int code;
 	size_t n;
 
-	if (access(git_path(post_rewrite_hook), X_OK) < 0)
+	argv[0] = find_hook("post-rewrite");
+	if (!argv[0])
 		return 0;
 
-	argv[0] = git_path(post_rewrite_hook);
 	argv[1] = "amend";
 	argv[2] = NULL;
 

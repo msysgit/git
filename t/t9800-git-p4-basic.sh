@@ -30,6 +30,11 @@ test_expect_success 'basic git p4 clone' '
 	)
 '
 
+test_expect_success 'depot typo error' '
+	test_must_fail git p4 clone --dest="$git" /depot 2>errs &&
+	grep "Depot paths must start with" errs
+'
+
 test_expect_success 'git p4 clone @all' '
 	git p4 clone --dest="$git" //depot@all &&
 	test_when_finished cleanup_git &&
@@ -160,9 +165,12 @@ test_expect_success 'clone --bare should make a bare repository' '
 	test_when_finished cleanup_git &&
 	(
 		cd "$git" &&
-		test ! -d .git &&
-		bare=`git config --get core.bare` &&
-		test "$bare" = true
+		test_path_is_missing .git &&
+		git config --get --bool core.bare true &&
+		git rev-parse --verify refs/remotes/p4/master &&
+		git rev-parse --verify refs/remotes/p4/HEAD &&
+		git rev-parse --verify refs/heads/master &&
+		git rev-parse --verify HEAD
 	)
 '
 

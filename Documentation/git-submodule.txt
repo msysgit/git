@@ -13,8 +13,10 @@ SYNOPSIS
 	      [--reference <repository>] [--] <repository> [<path>]
 'git submodule' [--quiet] status [--cached] [--recursive] [--] [<path>...]
 'git submodule' [--quiet] init [--] [<path>...]
-'git submodule' [--quiet] update [--init] [-N|--no-fetch] [--rebase]
-	      [--reference <repository>] [--merge] [--recursive] [--] [<path>...]
+'git submodule' [--quiet] deinit [-f|--force] [--] <path>...
+'git submodule' [--quiet] update [--init] [--remote] [-N|--no-fetch]
+	      [-f|--force] [--rebase] [--reference <repository>]
+	      [--merge] [--recursive] [--] [<path>...]
 'git submodule' [--quiet] summary [--cached|--files] [(-n|--summary-limit) <n>]
 	      [commit] [--] [<path>...]
 'git submodule' [--quiet] foreach [--recursive] <command>
@@ -75,6 +77,8 @@ argument <path> is the relative location for the cloned submodule
 to exist in the superproject. If <path> is not given, the
 "humanish" part of the source repository is used ("repo" for
 "/path/to/repo.git" and "foo" for "host.xz:foo/.git").
+The <path> is also used as the submodule's logical name in its
+configuration entries unless `--name` is used to specify a logical name.
 +
 <repository> is the URL of the new submodule's origin repository.
 This may be either an absolute URL, or (if it begins with ./
@@ -91,7 +95,7 @@ working directory is used instead.
 <path> is the relative location for the cloned submodule to
 exist in the superproject. If <path> does not exist, then the
 submodule is created by cloning from the named URL. If <path> does
-exist and is already a valid git repository, then this is added
+exist and is already a valid Git repository, then this is added
 to the changeset without cloning. This second form is provided
 to ease creating a new submodule from scratch, and presumes
 the user will later push the submodule to the given URL.
@@ -122,8 +126,10 @@ linkgit:git-status[1] and linkgit:git-diff[1] will provide that information
 too (and can also report changes to a submodule's work tree).
 
 init::
-	Initialize the submodules, i.e. register each submodule name
-	and url found in .gitmodules into .git/config.
+	Initialize the submodules recorded in the index (which were
+	added and committed elsewhere) by copying submodule
+	names and urls from .gitmodules to .git/config.
+	Optional <path> arguments limit which submodules will be initialized.
 	It will also copy the value of `submodule.$name.update` into
 	.git/config.
 	The key used in .git/config is `submodule.$name.url`.
@@ -133,6 +139,19 @@ init::
 	you can also just use `git submodule update --init` without
 	the explicit 'init' step if you do not intend to customize
 	any submodule locations.
+
+deinit::
+	Unregister the given submodules, i.e. remove the whole
+	`submodule.$name` section from .git/config together with their work
+	tree. Further calls to `git submodule update`, `git submodule foreach`
+	and `git submodule sync` will skip any unregistered submodules until
+	they are initialized again, so use this command if you don't want to
+	have a local checkout of the submodule in your work tree anymore. If
+	you really want to remove a submodule from the repository and commit
+	that use linkgit:git-rm[1] instead.
++
+If `--force` is specified, the submodule's work tree will be removed even if
+it contains local modifications.
 
 update::
 	Update the registered submodules, i.e. clone missing submodules and
@@ -208,11 +227,15 @@ OPTIONS
 -b::
 --branch::
 	Branch of repository to add as submodule.
+	The name of the branch is recorded as `submodule.<path>.branch` in
+	`.gitmodules` for `update --remote`.
 
 -f::
 --force::
-	This option is only valid for add and update commands.
+	This option is only valid for add, deinit and update commands.
 	When running add, allow adding an otherwise ignored submodule path.
+	When running deinit the submodule work trees will be removed even if
+	they contain local changes.
 	When running update, throw away local changes in submodules when
 	switching to a different commit; and always run a checkout operation
 	in the submodule, even if the commit listed in the index of the
@@ -235,6 +258,27 @@ OPTIONS
 	Giving 0 will disable the summary; a negative number means unlimited
 	(the default). This limit only applies to modified submodules. The
 	size is always limited to 1 for added/deleted/typechanged submodules.
+
+--remote::
+	This option is only valid for the update command.  Instead of using
+	the superproject's recorded SHA-1 to update the submodule, use the
+	status of the submodule's remote tracking branch.  The remote used
+	is branch's remote (`branch.<name>.remote`), defaulting to `origin`.
+	The remote branch used defaults to `master`, but the branch name may
+	be overridden by setting the `submodule.<name>.branch` option in
+	either `.gitmodules` or `.git/config` (with `.git/config` taking
+	precedence).
++
+This works for any of the supported update procedures (`--checkout`,
+`--rebase`, etc.).  The only change is the source of the target SHA-1.
+For example, `submodule update --remote --merge` will merge upstream
+submodule changes into the submodules, while `submodule update
+--merge` will merge superproject gitlink changes into the submodules.
++
+In order to ensure a current tracking branch state, `update --remote`
+fetches the submodule's remote repository before calculating the
+SHA-1.  If you don't want to fetch, you should use `submodule update
+--remote --no-fetch`.
 
 -N::
 --no-fetch::

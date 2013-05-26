@@ -70,7 +70,7 @@ static void format_write(int fd, const char *fmt, ...)
 	if (n >= sizeof(buffer))
 		die("protocol error: impossibly long line");
 
-	safe_write(fd, buffer, n);
+	write_or_die(fd, buffer, n);
 }
 
 static void http_status(unsigned code, const char *msg)
@@ -111,7 +111,7 @@ static void hdr_cache_forever(void)
 
 static void end_headers(void)
 {
-	safe_write(1, "\r\n", 2);
+	write_or_die(1, "\r\n", 2);
 }
 
 __attribute__((format (printf, 1, 2)))
@@ -157,7 +157,7 @@ static void send_strbuf(const char *type, struct strbuf *buf)
 	hdr_int(content_length, buf->len);
 	hdr_str(content_type, type);
 	end_headers();
-	safe_write(1, buf->buf, buf->len);
+	write_or_die(1, buf->buf, buf->len);
 }
 
 static void send_local_file(const char *the_type, const char *name)
@@ -185,7 +185,7 @@ static void send_local_file(const char *the_type, const char *name)
 			die_errno("Cannot read '%s'", p);
 		if (!n)
 			break;
-		safe_write(1, buf, n);
+		write_or_die(1, buf, n);
 	}
 	close(fd);
 	free(buf);
@@ -361,17 +361,19 @@ static void run_service(const char **argv)
 static int show_text_ref(const char *name, const unsigned char *sha1,
 	int flag, void *cb_data)
 {
+	const char *name_nons = strip_namespace(name);
 	struct strbuf *buf = cb_data;
 	struct object *o = parse_object(sha1);
 	if (!o)
 		return 0;
 
-	strbuf_addf(buf, "%s\t%s\n", sha1_to_hex(sha1), name);
+	strbuf_addf(buf, "%s\t%s\n", sha1_to_hex(sha1), name_nons);
 	if (o->type == OBJ_TAG) {
 		o = deref_tag(o, name, 0);
 		if (!o)
 			return 0;
-		strbuf_addf(buf, "%s\t%s^{}\n", sha1_to_hex(o->sha1), name);
+		strbuf_addf(buf, "%s\t%s^{}\n", sha1_to_hex(o->sha1),
+			    name_nons);
 	}
 	return 0;
 }
@@ -402,9 +404,37 @@ static void get_info_refs(char *arg)
 
 	} else {
 		select_getanyfile();
-		for_each_ref(show_text_ref, &buf);
+		for_each_namespaced_ref(show_text_ref, &buf);
 		send_strbuf("text/plain", &buf);
 	}
+	strbuf_release(&buf);
+}
+
+static int show_head_ref(const char *name, const unsigned char *sha1,
+	int flag, void *cb_data)
+{
+	struct strbuf *buf = cb_data;
+
+	if (flag & REF_ISSYMREF) {
+		unsigned char sha1[20];
+		const char *target = resolve_ref_unsafe(name, sha1, 1, NULL);
+		const char *target_nons = strip_namespace(target);
+
+		strbuf_addf(buf, "ref: %s\n", target_nons);
+	} else {
+		strbuf_addf(buf, "%s\n", sha1_to_hex(sha1));
+	}
+
+	return 0;
+}
+
+static void get_head(char *arg)
+{
+	struct strbuf buf = STRBUF_INIT;
+
+	select_getanyfile();
+	head_ref_namespaced(show_head_ref, &buf);
+	send_strbuf("text/plain", &buf);
 	strbuf_release(&buf);
 }
 
@@ -520,7 +550,7 @@ static struct service_cmd {
 	const char *pattern;
 	void (*imp)(char *);
 } services[] = {
-	{"GET", "/HEAD$", get_text_file},
+	{"GET", "/HEAD$", get_head},
 	{"GET", "/info/refs$", get_info_refs},
 	{"GET", "/objects/info/alternates$", get_text_file},
 	{"GET", "/objects/info/http-alternates$", get_text_file},

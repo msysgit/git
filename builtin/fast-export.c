@@ -18,15 +18,13 @@
 #include "parse-options.h"
 #include "quote.h"
 
-#define REF_HANDLED (ALL_REV_FLAGS + 1)
-
 static const char *fast_export_usage[] = {
 	N_("git fast-export [rev-list-opts]"),
 	NULL
 };
 
 static int progress;
-static enum { ABORT, VERBATIM, WARN, STRIP } signed_tag_mode = ABORT;
+static enum { ABORT, VERBATIM, WARN, WARN_STRIP, STRIP } signed_tag_mode = ABORT;
 static enum { ERROR, DROP, REWRITE } tag_of_filtered_mode = ERROR;
 static int fake_missing_tagger;
 static int use_done_feature;
@@ -42,10 +40,12 @@ static int parse_opt_signed_tag_mode(const struct option *opt,
 		signed_tag_mode = VERBATIM;
 	else if (!strcmp(arg, "warn"))
 		signed_tag_mode = WARN;
+	else if (!strcmp(arg, "warn-strip"))
+		signed_tag_mode = WARN_STRIP;
 	else if (!strcmp(arg, "strip"))
 		signed_tag_mode = STRIP;
 	else
-		return error("Unknown signed-tag mode: %s", arg);
+		return error("Unknown signed-tags mode: %s", arg);
 	return 0;
 }
 
@@ -115,12 +115,13 @@ static void show_progress(void)
 		printf("progress %d objects\n", counter);
 }
 
-static void handle_object(const unsigned char *sha1)
+static void export_blob(const unsigned char *sha1)
 {
 	unsigned long size;
 	enum object_type type;
 	char *buf;
 	struct object *object;
+	int eaten;
 
 	if (no_data)
 		return;
@@ -128,16 +129,18 @@ static void handle_object(const unsigned char *sha1)
 	if (is_null_sha1(sha1))
 		return;
 
-	object = parse_object(sha1);
-	if (!object)
-		die ("Could not read blob %s", sha1_to_hex(sha1));
-
-	if (object->flags & SHOWN)
+	object = lookup_object(sha1);
+	if (object && object->flags & SHOWN)
 		return;
 
 	buf = read_sha1_file(sha1, &type, &size);
 	if (!buf)
 		die ("Could not read blob %s", sha1_to_hex(sha1));
+	if (check_sha1_signature(sha1, buf, size, typename(type)) < 0)
+		die("sha1 mismatch in blob %s", sha1_to_hex(sha1));
+	object = parse_object_buffer(sha1, type, size, buf, &eaten);
+	if (!object)
+		die("Could not read blob %s", sha1_to_hex(sha1));
 
 	mark_next_object(object);
 
@@ -149,7 +152,8 @@ static void handle_object(const unsigned char *sha1)
 	show_progress();
 
 	object->flags |= SHOWN;
-	free(buf);
+	if (!eaten)
+		free(buf);
 }
 
 static int depth_first(const void *a_, const void *b_)
@@ -314,7 +318,7 @@ static void handle_commit(struct commit *commit, struct rev_info *rev)
 	/* Export the referenced blobs, and remember the marks. */
 	for (i = 0; i < diff_queued_diff.nr; i++)
 		if (!S_ISGITLINK(diff_queued_diff.queue[i]->two->mode))
-			handle_object(diff_queued_diff.queue[i]->two->sha1);
+			export_blob(diff_queued_diff.queue[i]->two->sha1);
 
 	mark_next_object(&commit->object);
 	if (!is_encoding_utf8(encoding))
@@ -418,7 +422,7 @@ static void handle_tag(const char *name, struct tag *tag)
 			switch(signed_tag_mode) {
 			case ABORT:
 				die ("Encountered signed tag %s; use "
-				     "--signed-tag=<mode> to handle it.",
+				     "--signed-tags=<mode> to handle it.",
 				     sha1_to_hex(tag->object.sha1));
 			case WARN:
 				warning ("Exporting signed tag %s",
@@ -426,6 +430,10 @@ static void handle_tag(const char *name, struct tag *tag)
 				/* fallthru */
 			case VERBATIM:
 				break;
+			case WARN_STRIP:
+				warning ("Stripping signature from tag %s",
+					 sha1_to_hex(tag->object.sha1));
+				/* fallthru */
 			case STRIP:
 				message_size = signature + 1 - message;
 				break;
@@ -476,20 +484,22 @@ static void handle_tag(const char *name, struct tag *tag)
 	       (int)message_size, (int)message_size, message ? message : "");
 }
 
-static void get_tags_and_duplicates(struct object_array *pending,
-				    struct string_list *refs,
+static void get_tags_and_duplicates(struct rev_cmdline_info *info,
 				    struct string_list *extra_refs)
 {
 	struct tag *tag;
 	int i;
 
-	for (i = 0; i < pending->nr; i++) {
-		struct object_array_entry *e = pending->objects + i;
+	for (i = 0; i < info->nr; i++) {
+		struct rev_cmdline_entry *e = info->rev + i;
 		unsigned char sha1[20];
-		struct commit *commit = commit;
+		struct commit *commit;
 		char *full_name;
 
-		if ((e->flags & UNINTERESTING) || dwim_ref(e->name, strlen(e->name), sha1, &full_name) != 1)
+		if (e->flags & UNINTERESTING)
+			continue;
+
+		if (dwim_ref(e->name, strlen(e->name), sha1, &full_name) != 1)
 			continue;
 
 		switch (e->item->type) {
@@ -512,7 +522,7 @@ static void get_tags_and_duplicates(struct object_array *pending,
 				commit = (struct commit *)tag;
 				break;
 			case OBJ_BLOB:
-				handle_object(tag->object.sha1);
+				export_blob(tag->object.sha1);
 				continue;
 			default: /* OBJ_TAG (nested tags) is already handled */
 				warning("Tag points to object of unexpected type %s, skipping.",
@@ -526,14 +536,15 @@ static void get_tags_and_duplicates(struct object_array *pending,
 				typename(e->item->type));
 			continue;
 		}
-		if (commit->util)
-			/* more than one name for the same object */
+
+		/*
+		 * This ref will not be updated through a commit, lets make
+		 * sure it gets properly updated eventually.
+		 */
+		if (commit->util || commit->object.flags & SHOWN)
 			string_list_append(extra_refs, full_name)->util = commit;
-		else {
+		if (!commit->util)
 			commit->util = full_name;
-			/* we might need to set this ref explicitly */
-			string_list_append(refs, full_name)->util = commit;
-		}
 	}
 }
 
@@ -549,28 +560,9 @@ static void handle_reset(const char *name, struct object *object)
 		       sha1_to_hex(object->sha1));
 }
 
-static void handle_tags_and_duplicates(struct string_list *refs, struct string_list *extra_refs)
+static void handle_tags_and_duplicates(struct string_list *extra_refs)
 {
 	int i;
-
-	/* even if no commits were exported, we need to export the ref */
-	for (i = refs->nr - 1; i >= 0; i--) {
-		const char *name = refs->items[i].string;
-		struct object *object = refs->items[i].util;
-
-		if (!(object->flags & REF_HANDLED)) {
-			if (object->type & OBJ_TAG)
-				handle_tag(name, (struct tag *)object);
-			else {
-				if (!prefixcmp(name, "refs/tags/") &&
-				    (tag_of_filtered_mode != REWRITE ||
-				     !get_object_mark(object)))
-					continue;
-				handle_reset(name, object);
-				object->flags |= REF_HANDLED;
-			}
-		}
-	}
 
 	for (i = extra_refs->nr - 1; i >= 0; i--) {
 		const char *name = extra_refs->items[i].string;
@@ -641,16 +633,21 @@ static void import_marks(char *input_file)
 			|| *mark_end != ' ' || get_sha1(mark_end + 1, sha1))
 			die("corrupt mark line: %s", line);
 
+		if (last_idnum < mark)
+			last_idnum = mark;
+
 		object = parse_object(sha1);
 		if (!object)
-			die ("Could not read blob %s", sha1_to_hex(sha1));
+			continue;
 
 		if (object->flags & SHOWN)
 			error("Object %s already has a mark", sha1_to_hex(sha1));
 
+		if (object->type != OBJ_COMMIT)
+			/* only commits */
+			continue;
+
 		mark_object(object, mark);
-		if (last_idnum < mark)
-			last_idnum = mark;
 
 		object->flags |= SHOWN;
 	}
@@ -661,9 +658,10 @@ int cmd_fast_export(int argc, const char **argv, const char *prefix)
 {
 	struct rev_info revs;
 	struct object_array commits = OBJECT_ARRAY_INIT;
-	struct string_list refs = STRING_LIST_INIT_NODUP, extra_refs = STRING_LIST_INIT_NODUP;
+	struct string_list extra_refs = STRING_LIST_INIT_NODUP;
 	struct commit *commit;
 	char *export_filename = NULL, *import_filename = NULL;
+	uint32_t lastimportid;
 	struct option options[] = {
 		OPT_INTEGER(0, "progress", &progress,
 			    N_("show progress after <n> objects")),
@@ -707,11 +705,12 @@ int cmd_fast_export(int argc, const char **argv, const char *prefix)
 
 	if (import_filename)
 		import_marks(import_filename);
+	lastimportid = last_idnum;
 
 	if (import_filename && revs.prune_data.nr)
 		full_tree = 1;
 
-	get_tags_and_duplicates(&revs.pending, &refs, &extra_refs);
+	get_tags_and_duplicates(&revs.cmdline, &extra_refs);
 
 	if (prepare_revision_walk(&revs))
 		die("revision walk setup failed");
@@ -723,14 +722,13 @@ int cmd_fast_export(int argc, const char **argv, const char *prefix)
 		}
 		else {
 			handle_commit(commit, &revs);
-			commit->object.flags |= REF_HANDLED;
 			handle_tail(&commits, &revs);
 		}
 	}
 
-	handle_tags_and_duplicates(&refs, &extra_refs);
+	handle_tags_and_duplicates(&extra_refs);
 
-	if (export_filename)
+	if (export_filename && lastimportid != last_idnum)
 		export_marks(export_filename);
 
 	if (use_done_feature)
