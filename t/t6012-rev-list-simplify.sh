@@ -56,19 +56,37 @@ test_expect_success setup '
 
 	echo "Final change" >file &&
 	test_tick && git commit -a -m "Final change" &&
-	note I
+	note I &&
+
+	git symbolic-ref HEAD refs/heads/unrelated &&
+	git rm -f "*" &&
+	echo "Unrelated branch" >side &&
+	git add side &&
+	test_tick && git commit -m "Side root" &&
+	note J &&
+
+	git checkout master &&
+	test_tick && git merge -m "Coolest" unrelated &&
+	note K &&
+
+	echo "Immaterial" >elif &&
+	git add elif &&
+	test_tick && git commit -m "Last" &&
+	note L
 '
 
 FMT='tformat:%P 	%H | %s'
 
-check_result () {
+check_outcome () {
+	outcome=$1
+	shift
 	for c in $1
 	do
 		echo "$c"
 	done >expect &&
 	shift &&
 	param="$*" &&
-	test_expect_success "log $param" '
+	test_expect_$outcome "log $param" '
 		git log --pretty="$FMT" --parents $param |
 		unnote >actual &&
 		sed -e "s/^.*	\([^ ]*\) .*/\1/" >check <actual &&
@@ -79,11 +97,15 @@ check_result () {
 	'
 }
 
-check_result 'I H G F E D C B A' --full-history
-check_result 'I H E C B A' --full-history -- file
-check_result 'I H E C B A' --full-history --topo-order -- file
-check_result 'I H E C B A' --full-history --date-order -- file
-check_result 'I E C B A' --simplify-merges -- file
+check_result () {
+	check_outcome success "$@"
+}
+
+check_result 'L K J I H G F E D C B A' --full-history
+check_result 'K I H E C B A' --full-history -- file
+check_result 'K I H E C B A' --full-history --topo-order -- file
+check_result 'K I H E C B A' --full-history --date-order -- file
+check_outcome failure 'I E C B A' --simplify-merges -- file
 check_result 'I B A' -- file
 check_result 'I B A' --topo-order -- file
 check_result 'H' --first-parent -- another-file

@@ -13,6 +13,25 @@ complete ()
 	return 0
 }
 
+# Be careful when updating this list:
+#
+# (1) The build tree may have build artifact from different branch, or
+#     the user's $PATH may have a random executable that may begin
+#     with "git-check" that are not part of the subcommands this build
+#     will ship, e.g.  "check-ignore".  The tests for completion for
+#     subcommand names tests how "check" is expanded; we limit the
+#     possible candidates to "checkout" and "check-attr" to make sure
+#     "check-attr", which is known by the filter function as a
+#     subcommand to be thrown out, while excluding other random files
+#     that happen to begin with "check" to avoid letting them get in
+#     the way.
+#
+# (2) A test makes sure that common subcommands are included in the
+#     completion for "git <TAB>", and a plumbing is excluded.  "add",
+#     "filter-branch" and "ls-files" are listed for this.
+
+GIT_TESTING_COMMAND_COMPLETION='add checkout check-attr filter-branch ls-files'
+
 . "$GIT_BUILD_DIR/contrib/completion/git-completion.bash"
 
 # We don't need this function to actually join words or do anything special.
@@ -50,6 +69,7 @@ run_completion ()
 	local -a COMPREPLY _words
 	local _cword
 	_words=( $1 )
+	test "${1: -1}" == ' ' && _words+=('')
 	(( _cword = ${#_words[@]} - 1 ))
 	__git_wrap__git_main && print_comp
 }
@@ -84,6 +104,23 @@ test_gitcomp ()
 	print_comp &&
 	test_cmp expected out
 }
+
+# Test __gitcomp_nl
+# Arguments are:
+# 1: current word (cur)
+# -: the rest are passed to __gitcomp_nl
+test_gitcomp_nl ()
+{
+	local -a COMPREPLY &&
+	sed -e 's/Z$//' >expected &&
+	cur="$1" &&
+	shift &&
+	__gitcomp_nl "$@" &&
+	print_comp &&
+	test_cmp expected out
+}
+
+invalid_variable_name='${foo.bar}'
 
 test_expect_success '__gitcomp - trailing space - options' '
 	test_gitcomp "--re" "--dry-run --reuse-message= --reedit-message=
@@ -128,8 +165,51 @@ test_expect_success '__gitcomp - suffix' '
 	EOF
 '
 
+test_expect_success '__gitcomp - doesnt fail because of invalid variable name' '
+	__gitcomp "$invalid_variable_name"
+'
+
+read -r -d "" refs <<-\EOF
+maint
+master
+next
+pu
+EOF
+
+test_expect_success '__gitcomp_nl - trailing space' '
+	test_gitcomp_nl "m" "$refs" <<-EOF
+	maint Z
+	master Z
+	EOF
+'
+
+test_expect_success '__gitcomp_nl - prefix' '
+	test_gitcomp_nl "--fixup=m" "$refs" "--fixup=" "m" <<-EOF
+	--fixup=maint Z
+	--fixup=master Z
+	EOF
+'
+
+test_expect_success '__gitcomp_nl - suffix' '
+	test_gitcomp_nl "branch.ma" "$refs" "branch." "ma" "." <<-\EOF
+	branch.maint.Z
+	branch.master.Z
+	EOF
+'
+
+test_expect_success '__gitcomp_nl - no suffix' '
+	test_gitcomp_nl "ma" "$refs" "" "ma" "" <<-\EOF
+	maintZ
+	masterZ
+	EOF
+'
+
+test_expect_success '__gitcomp_nl - doesnt fail because of invalid variable name' '
+	__gitcomp_nl "$invalid_variable_name"
+'
+
 test_expect_success 'basic' '
-	run_completion "git \"\"" &&
+	run_completion "git " &&
 	# built-in
 	grep -q "^add \$" out &&
 	# script
@@ -196,7 +276,6 @@ test_expect_success 'general options plus command' '
 	test_completion "git --paginate check" "checkout " &&
 	test_completion "git --git-dir=foo check" "checkout " &&
 	test_completion "git --bare check" "checkout " &&
-	test_completion "git --help des" "describe " &&
 	test_completion "git --exec-path=foo check" "checkout " &&
 	test_completion "git --html-path check" "checkout " &&
 	test_completion "git --no-pager check" "checkout " &&
@@ -205,6 +284,11 @@ test_expect_success 'general options plus command' '
 	test_completion "git --paginate check" "checkout " &&
 	test_completion "git --info-path check" "checkout " &&
 	test_completion "git --no-replace-objects check" "checkout "
+'
+
+test_expect_success 'git --help completion' '
+	test_completion "git --help ad" "add " &&
+	test_completion "git --help core" "core-tutorial "
 '
 
 test_expect_success 'setup for ref completion' '
@@ -248,7 +332,7 @@ test_expect_success 'complete tree filename with spaces' '
 	EOF
 '
 
-test_expect_failure 'complete tree filename with metacharacters' '
+test_expect_success 'complete tree filename with metacharacters' '
 	echo content >"name with \${meta}" &&
 	git add . &&
 	git commit -m meta &&

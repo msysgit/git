@@ -3,6 +3,7 @@
 #include "cache.h"
 #include "commit.h"
 #include "color.h"
+#include "utf8.h"
 
 static int parse_options_usage(struct parse_opt_ctx_t *ctx,
 			       const char * const *usagestr,
@@ -16,15 +17,6 @@ int optbug(const struct option *opt, const char *reason)
 	if (opt->long_name)
 		return error("BUG: option '%s' %s", opt->long_name, reason);
 	return error("BUG: switch '%c' %s", opt->short_name, reason);
-}
-
-int opterror(const struct option *opt, const char *reason, int flags)
-{
-	if (flags & OPT_SHORT)
-		return error("switch `%c' %s", opt->short_name, reason);
-	if (flags & OPT_UNSET)
-		return error("option `no-%s' %s", opt->long_name, reason);
-	return error("option `%s' %s", opt->long_name, reason);
 }
 
 static int get_arg(struct parse_opt_ctx_t *p, const struct option *opt,
@@ -470,8 +462,11 @@ int parse_options(int argc, const char **argv, const char *prefix,
 	default: /* PARSE_OPT_UNKNOWN */
 		if (ctx.argv[0][1] == '-') {
 			error("unknown option `%s'", ctx.argv[0] + 2);
-		} else {
+		} else if (isascii(*ctx.opt)) {
 			error("unknown switch `%c'", *ctx.opt);
+		} else {
+			error("unknown non-ascii option in string: `%s'",
+			      ctx.argv[0]);
 		}
 		usage_with_options(usagestr, options);
 	}
@@ -491,7 +486,7 @@ static int usage_argh(const struct option *opts, FILE *outfile)
 			s = literal ? "[%s]" : "[<%s>]";
 	else
 		s = literal ? " %s" : " <%s>";
-	return fprintf(outfile, s, opts->argh ? _(opts->argh) : _("..."));
+	return utf8_fprintf(outfile, s, opts->argh ? _(opts->argh) : _("..."));
 }
 
 #define USAGE_OPTS_WIDTH 24
@@ -550,7 +545,7 @@ static int usage_with_options_internal(struct parse_opt_ctx_t *ctx,
 		if (opts->long_name)
 			pos += fprintf(outfile, "--%s", opts->long_name);
 		if (opts->type == OPTION_NUMBER)
-			pos += fprintf(outfile, "-NUM");
+			pos += utf8_fprintf(outfile, _("-NUM"));
 
 		if ((opts->flags & PARSE_OPT_LITERAL_ARGHELP) ||
 		    !(opts->flags & PARSE_OPT_NOARG))
@@ -594,3 +589,12 @@ static int parse_options_usage(struct parse_opt_ctx_t *ctx,
 	return usage_with_options_internal(ctx, usagestr, opts, 0, err);
 }
 
+#undef opterror
+int opterror(const struct option *opt, const char *reason, int flags)
+{
+	if (flags & OPT_SHORT)
+		return error("switch `%c' %s", opt->short_name, reason);
+	if (flags & OPT_UNSET)
+		return error("option `no-%s' %s", opt->long_name, reason);
+	return error("option `%s' %s", opt->long_name, reason);
+}

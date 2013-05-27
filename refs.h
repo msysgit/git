@@ -103,7 +103,7 @@ extern int read_ref_at(const char *refname, unsigned long at_time, int cnt,
 /* iterate over reflog entries */
 typedef int each_reflog_ent_fn(unsigned char *osha1, unsigned char *nsha1, const char *, unsigned long, int, const char *, void *);
 int for_each_reflog_ent(const char *refname, each_reflog_ent_fn fn, void *cb_data);
-int for_each_recent_reflog_ent(const char *refname, each_reflog_ent_fn fn, long, void *cb_data);
+int for_each_reflog_ent_reverse(const char *refname, each_reflog_ent_fn fn, void *cb_data);
 
 /*
  * Calls the specified function for each reflog file until it returns nonzero,
@@ -146,5 +146,8 @@ enum action_on_err { MSG_ON_ERR, DIE_ON_ERR, QUIET_ON_ERR };
 int update_ref(const char *action, const char *refname,
 		const unsigned char *sha1, const unsigned char *oldval,
 		int flags, enum action_on_err onerr);
+
+extern int parse_hide_refs_config(const char *var, const char *value, const char *);
+extern int ref_is_hidden(const char *);
 
 #endif /* REFS_H */

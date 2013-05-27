@@ -220,31 +220,67 @@ static const char message_advice_checkout_pull_push[] =
 	   "(e.g. 'git pull') before pushing again.\n"
 	   "See the 'Note about fast-forwards' in 'git push --help' for details.");
 
+static const char message_advice_ref_fetch_first[] =
+	N_("Updates were rejected because the remote contains work that you do\n"
+	   "not have locally. This is usually caused by another repository pushing\n"
+	   "to the same ref. You may want to first merge the remote changes (e.g.,\n"
+	   "'git pull') before pushing again.\n"
+	   "See the 'Note about fast-forwards' in 'git push --help' for details.");
+
+static const char message_advice_ref_already_exists[] =
+	N_("Updates were rejected because the tag already exists in the remote.");
+
+static const char message_advice_ref_needs_force[] =
+	N_("You cannot update a remote ref that points at a non-commit object,\n"
+	   "or update a remote ref to make it point at a non-commit object,\n"
+	   "without using the '--force' option.\n");
+
 static void advise_pull_before_push(void)
 {
-	if (!advice_push_non_ff_current || !advice_push_nonfastforward)
+	if (!advice_push_non_ff_current || !advice_push_update_rejected)
 		return;
 	advise(_(message_advice_pull_before_push));
 }
 
 static void advise_use_upstream(void)
 {
-	if (!advice_push_non_ff_default || !advice_push_nonfastforward)
+	if (!advice_push_non_ff_default || !advice_push_update_rejected)
 		return;
 	advise(_(message_advice_use_upstream));
 }
 
 static void advise_checkout_pull_push(void)
 {
-	if (!advice_push_non_ff_matching || !advice_push_nonfastforward)
+	if (!advice_push_non_ff_matching || !advice_push_update_rejected)
 		return;
 	advise(_(message_advice_checkout_pull_push));
+}
+
+static void advise_ref_already_exists(void)
+{
+	if (!advice_push_already_exists || !advice_push_update_rejected)
+		return;
+	advise(_(message_advice_ref_already_exists));
+}
+
+static void advise_ref_fetch_first(void)
+{
+	if (!advice_push_fetch_first || !advice_push_update_rejected)
+		return;
+	advise(_(message_advice_ref_fetch_first));
+}
+
+static void advise_ref_needs_force(void)
+{
+	if (!advice_push_needs_force || !advice_push_update_rejected)
+		return;
+	advise(_(message_advice_ref_needs_force));
 }
 
 static int push_with_options(struct transport *transport, int flags)
 {
 	int err;
-	int nonfastforward;
+	unsigned int reject_reasons;
 
 	transport_set_verbosity(transport, verbosity, progress);
 
@@ -257,7 +293,7 @@ static int push_with_options(struct transport *transport, int flags)
 	if (verbosity > 0)
 		fprintf(stderr, _("Pushing to %s\n"), transport->url);
 	err = transport_push(transport, refspec_nr, refspec, flags,
-			     &nonfastforward);
+			     &reject_reasons);
 	if (err != 0)
 		error(_("failed to push some refs to '%s'"), transport->url);
 
@@ -265,18 +301,19 @@ static int push_with_options(struct transport *transport, int flags)
 	if (!err)
 		return 0;
 
-	switch (nonfastforward) {
-	default:
-		break;
-	case NON_FF_HEAD:
+	if (reject_reasons & REJECT_NON_FF_HEAD) {
 		advise_pull_before_push();
-		break;
-	case NON_FF_OTHER:
+	} else if (reject_reasons & REJECT_NON_FF_OTHER) {
 		if (default_matching_used)
 			advise_use_upstream();
 		else
 			advise_checkout_pull_push();
-		break;
+	} else if (reject_reasons & REJECT_ALREADY_EXISTS) {
+		advise_ref_already_exists();
+	} else if (reject_reasons & REJECT_FETCH_FIRST) {
+		advise_ref_fetch_first();
+	} else if (reject_reasons & REJECT_NEEDS_FORCE) {
+		advise_ref_needs_force();
 	}
 
 	return 1;
@@ -285,7 +322,7 @@ static int push_with_options(struct transport *transport, int flags)
 static int do_push(const char *repo, int flags)
 {
 	int i, errs;
-	struct remote *remote = remote_get(repo);
+	struct remote *remote = pushremote_get(repo);
 	const char **url;
 	int url_nr;
 
@@ -399,6 +436,9 @@ int cmd_push(int argc, const char **argv, const char *prefix)
 		OPT_BOOL(0, "progress", &progress, N_("force progress reporting")),
 		OPT_BIT(0, "prune", &flags, N_("prune locally removed refs"),
 			TRANSPORT_PUSH_PRUNE),
+		OPT_BIT(0, "no-verify", &flags, N_("bypass pre-push hook"), TRANSPORT_PUSH_NO_HOOK),
+		OPT_BIT(0, "follow-tags", &flags, N_("push missing but relevant tags"),
+			TRANSPORT_PUSH_FOLLOW_TAGS),
 		OPT_END()
 	};
 

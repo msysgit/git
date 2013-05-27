@@ -1,18 +1,25 @@
 /*
- * I'm tired of doing "vsnprintf()" etc just to open a
- * file, so here's a "return static buffer with printf"
- * interface for paths.
- *
- * It's obviously not thread-safe. Sue me. But it's quite
- * useful for doing things like
- *
- *   f = open(mkpath("%s/%s.git", base, name), O_RDONLY);
- *
- * which is what it's designed for.
+ * Utilities for paths and pathnames
  */
 #include "cache.h"
 #include "strbuf.h"
 #include "string-list.h"
+
+#ifndef get_st_mode_bits
+/*
+ * The replacement lstat(2) we use on Cygwin is incomplete and
+ * may return wrong permission bits. Most of the time we do not care,
+ * but the callsites of this wrapper do care.
+ */
+int get_st_mode_bits(const char *path, int *mode)
+{
+	struct stat st;
+	if (lstat(path, &st) < 0)
+		return -1;
+	*mode = st.st_mode;
+	return 0;
+}
+#endif
 
 static char bad_path[] = "/bad-path/";
 
@@ -389,28 +396,14 @@ const char *enter_repo(const char *path, int strict)
 	return NULL;
 }
 
-int set_shared_perm(const char *path, int mode)
+static int calc_shared_perm(int mode)
 {
-	struct stat st;
-	int tweak, shared, orig_mode;
+	int tweak;
 
-	if (!shared_repository) {
-		if (mode)
-			return chmod(path, mode & ~S_IFMT);
-		return 0;
-	}
-	if (!mode) {
-		if (lstat(path, &st) < 0)
-			return -1;
-		mode = st.st_mode;
-		orig_mode = mode;
-	} else
-		orig_mode = 0;
 	if (shared_repository < 0)
-		shared = -shared_repository;
+		tweak = -shared_repository;
 	else
-		shared = shared_repository;
-	tweak = shared;
+		tweak = shared_repository;
 
 	if (!(mode & S_IWUSR))
 		tweak &= ~0222;
@@ -422,16 +415,28 @@ int set_shared_perm(const char *path, int mode)
 	else
 		mode |= tweak;
 
-	if (S_ISDIR(mode)) {
+	return mode;
+}
+
+
+int adjust_shared_perm(const char *path)
+{
+	int old_mode, new_mode;
+
+	if (!shared_repository)
+		return 0;
+	if (get_st_mode_bits(path, &old_mode) < 0)
+		return -1;
+
+	new_mode = calc_shared_perm(old_mode);
+	if (S_ISDIR(old_mode)) {
 		/* Copy read bits to execute bits */
-		mode |= (shared & 0444) >> 2;
-		mode |= FORCE_DIR_SET_GID;
+		new_mode |= (new_mode & 0444) >> 2;
+		new_mode |= FORCE_DIR_SET_GID;
 	}
 
-	if (((shared_repository < 0
-	      ? (orig_mode & (FORCE_DIR_SET_GID | 0777))
-	      : (orig_mode & mode)) != mode) &&
-	    chmod(path, (mode & ~S_IFMT)) < 0)
+	if (((old_mode ^ new_mode) & ~S_IFMT) &&
+			chmod(path, (new_mode & ~S_IFMT)) < 0)
 		return -2;
 	return 0;
 }

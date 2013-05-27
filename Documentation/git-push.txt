@@ -9,7 +9,7 @@ git-push - Update remote refs along with associated objects
 SYNOPSIS
 --------
 [verse]
-'git push' [--all | --mirror | --tags] [-n | --dry-run] [--receive-pack=<git-receive-pack>]
+'git push' [--all | --mirror | --tags] [--follow-tags] [-n | --dry-run] [--receive-pack=<git-receive-pack>]
 	   [--repo=<repository>] [-f | --force] [--prune] [-v | --verbose] [-u | --set-upstream]
 	   [<repository> [<refspec>...]]
 
@@ -23,6 +23,17 @@ You can make interesting things happen to a repository
 every time you push into it, by setting up 'hooks' there.  See
 documentation for linkgit:git-receive-pack[1].
 
+When the command line does not specify where to push with the
+`<repository>` argument, `branch.*.remote` configuration for the
+current branch is consulted to determine where to push.  If the
+configuration is missing, it defaults to 'origin'.
+
+When the command line does not specify what to push with `<refspec>...`
+arguments or `--all`, `--mirror`, `--tags` options, the command finds
+the default `<refspec>` by consulting `remote.*.push` configuration,
+and if it is not found, honors `push.default` configuration to decide
+what to push (See gitlink:git-config[1] for the meaning of `push.default`).
+
 
 OPTIONS[[OPTIONS]]
 ------------------
@@ -33,13 +44,10 @@ OPTIONS[[OPTIONS]]
 	of a remote (see the section <<REMOTES,REMOTES>> below).
 
 <refspec>...::
+	Specify what destination ref to update with what source object.
 	The format of a <refspec> parameter is an optional plus
-	`+`, followed by the source ref <src>, followed
+	`+`, followed by the source object <src>, followed
 	by a colon `:`, followed by the destination ref <dst>.
-	It is used to specify with what <src> object the <dst> ref
-	in the remote repository is to be updated.  If not specified,
-	the behavior of the command is controlled by the `push.default`
-	configuration variable.
 +
 The <src> is often the name of the branch you would want to push, but
 it can be any arbitrary "SHA-1 expression", such as `master~4` or
@@ -51,10 +59,11 @@ be named. If `:`<dst> is omitted, the same ref as <src> will be
 updated.
 +
 The object referenced by <src> is used to update the <dst> reference
-on the remote side, but by default this is only allowed if the
-update can fast-forward <dst>.  By having the optional leading `+`,
-you can tell git to update the <dst> ref even when the update is not a
-fast-forward.  This does *not* attempt to merge <src> into <dst>.  See
+on the remote side.  By default this is only allowed if <dst> is not
+a tag (annotated or lightweight), and then only if it can fast-forward
+<dst>.  By having the optional leading `+`, you can tell Git to update
+the <dst> ref even if it is not allowed by default (e.g., it is not a
+fast-forward.)  This does *not* attempt to merge <src> into <dst>.  See
 EXAMPLES below for details.
 +
 `tag <tag>` means the same as `refs/tags/<tag>:refs/tags/<tag>`.
@@ -63,12 +72,9 @@ Pushing an empty <src> allows you to delete the <dst> ref from
 the remote repository.
 +
 The special refspec `:` (or `+:` to allow non-fast-forward updates)
-directs git to push "matching" branches: for every branch that exists on
+directs Git to push "matching" branches: for every branch that exists on
 the local side, the remote side is updated if a branch of the same name
-already exists on the remote side.  This is the default operation mode
-if no explicit refspec is found (that is neither on the command line
-nor in any Push line of the corresponding remotes file---see below) and
-no `push.default` configuration variable is set.
+already exists on the remote side.
 
 --all::
 	Instead of naming each ref to push, specifies that all
@@ -111,6 +117,12 @@ no `push.default` configuration variable is set.
 	addition to refspecs explicitly listed on the command
 	line.
 
+--follow-tags::
+	Push all the refs that would be pushed without this option,
+	and also push annotated tags in `refs/tags` that are missing
+	from the remote but are pointing at committish that are
+	reachable from the refs being pushed.
+
 --receive-pack=<git-receive-pack>::
 --exec=<git-receive-pack>::
 	Path to the 'git-receive-pack' program on the remote
@@ -150,8 +162,7 @@ useful if you write an alias or script around 'git push'.
 	linkgit:git-pull[1] and other commands. For more information,
 	see 'branch.<name>.merge' in linkgit:git-config[1].
 
---thin::
---no-thin::
+--[no-]thin::
 	These options are passed to linkgit:git-send-pack[1]. A thin transfer
 	significantly reduces the amount of sent data when the sender and
 	receiver share many of the same objects in common. The default is
@@ -176,7 +187,7 @@ useful if you write an alias or script around 'git push'.
 --recurse-submodules=check|on-demand::
 	Make sure all submodule commits used by the revisions to be
 	pushed are available on a remote-tracking branch. If 'check' is
-	used git will verify that all submodule commits that changed in
+	used Git will verify that all submodule commits that changed in
 	the revisions to be pushed are available on at least one remote
 	of the submodule. If any commits are missing the push will be
 	aborted and exit with non-zero status. If 'on-demand' is used
@@ -191,7 +202,7 @@ OUTPUT
 ------
 
 The output of "git push" depends on the transport method used; this
-section describes the output when pushing over the git protocol (either
+section describes the output when pushing over the Git protocol (either
 locally or via ssh).
 
 The status of the push is output in tabular form, with each line

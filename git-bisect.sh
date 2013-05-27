@@ -311,7 +311,23 @@ bisect_next() {
 	res=$?
 
 	# Check if we should exit because bisection is finished
-	test $res -eq 10 && exit 0
+	if test $res -eq 10
+	then
+		bad_rev=$(git show-ref --hash --verify refs/bisect/bad)
+		bad_commit=$(git show-branch $bad_rev)
+		echo "# first bad commit: $bad_commit" >>"$GIT_DIR/BISECT_LOG"
+		exit 0
+	elif test $res -eq 2
+	then
+		echo "# only skipped commits left to test" >>"$GIT_DIR/BISECT_LOG"
+		good_revs=$(git for-each-ref --format="--not %(objectname)" "refs/bisect/good-*")
+		for skipped in $(git rev-list refs/bisect/bad $good_revs)
+		do
+			skipped_commit=$(git show-branch $skipped)
+			echo "# possible first bad commit: $skipped_commit" >>"$GIT_DIR/BISECT_LOG"
+		done
+		exit $res
+	fi
 
 	# Check for an error in the bisection process
 	test $res -ne 0 && exit $res

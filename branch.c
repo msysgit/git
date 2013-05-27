@@ -57,7 +57,7 @@ void install_branch_config(int flag, const char *local, const char *origin, cons
 	if (remote_is_branch
 	    && !strcmp(local, shortname)
 	    && !origin) {
-		warning("Not setting branch %s as its own upstream.",
+		warning(_("Not setting branch %s as its own upstream."),
 			local);
 		return;
 	}
@@ -78,25 +78,25 @@ void install_branch_config(int flag, const char *local, const char *origin, cons
 
 	if (flag & BRANCH_CONFIG_VERBOSE) {
 		if (remote_is_branch && origin)
-			printf(rebasing ?
-			       "Branch %s set up to track remote branch %s from %s by rebasing.\n" :
-			       "Branch %s set up to track remote branch %s from %s.\n",
-			       local, shortname, origin);
+			printf_ln(rebasing ?
+				  _("Branch %s set up to track remote branch %s from %s by rebasing.") :
+				  _("Branch %s set up to track remote branch %s from %s."),
+				  local, shortname, origin);
 		else if (remote_is_branch && !origin)
-			printf(rebasing ?
-			       "Branch %s set up to track local branch %s by rebasing.\n" :
-			       "Branch %s set up to track local branch %s.\n",
-			       local, shortname);
+			printf_ln(rebasing ?
+				  _("Branch %s set up to track local branch %s by rebasing.") :
+				  _("Branch %s set up to track local branch %s."),
+				  local, shortname);
 		else if (!remote_is_branch && origin)
-			printf(rebasing ?
-			       "Branch %s set up to track remote ref %s by rebasing.\n" :
-			       "Branch %s set up to track remote ref %s.\n",
-			       local, remote);
+			printf_ln(rebasing ?
+				  _("Branch %s set up to track remote ref %s by rebasing.") :
+				  _("Branch %s set up to track remote ref %s."),
+				  local, remote);
 		else if (!remote_is_branch && !origin)
-			printf(rebasing ?
-			       "Branch %s set up to track local ref %s by rebasing.\n" :
-			       "Branch %s set up to track local ref %s.\n",
-			       local, remote);
+			printf_ln(rebasing ?
+				  _("Branch %s set up to track local ref %s by rebasing.") :
+				  _("Branch %s set up to track local ref %s."),
+				  local, remote);
 		else
 			die("BUG: impossible combination of %d and %p",
 			    remote_is_branch, origin);
@@ -115,7 +115,7 @@ static int setup_tracking(const char *new_ref, const char *orig_ref,
 	int config_flags = quiet ? 0 : BRANCH_CONFIG_VERBOSE;
 
 	if (strlen(new_ref) > 1024 - 7 - 7 - 1)
-		return error("Tracking not set up: name too long: %s",
+		return error(_("Tracking not set up: name too long: %s"),
 				new_ref);
 
 	memset(&tracking, 0, sizeof(tracking));
@@ -134,7 +134,7 @@ static int setup_tracking(const char *new_ref, const char *orig_ref,
 		}
 
 	if (tracking.matches > 1)
-		return error("Not tracking: ambiguous information for ref %s",
+		return error(_("Not tracking: ambiguous information for ref %s"),
 				orig_ref);
 
 	install_branch_config(config_flags, new_ref, tracking.remote,
@@ -179,12 +179,12 @@ int validate_new_branchname(const char *name, struct strbuf *ref,
 			    int force, int attr_only)
 {
 	if (strbuf_check_branch_ref(ref, name))
-		die("'%s' is not a valid branch name.", name);
+		die(_("'%s' is not a valid branch name."), name);
 
 	if (!ref_exists(ref->buf))
 		return 0;
 	else if (!force && !attr_only)
-		die("A branch named '%s' already exists.", ref->buf + strlen("refs/heads/"));
+		die(_("A branch named '%s' already exists."), ref->buf + strlen("refs/heads/"));
 
 	if (!attr_only) {
 		const char *head;
@@ -192,10 +192,24 @@ int validate_new_branchname(const char *name, struct strbuf *ref,
 
 		head = resolve_ref_unsafe("HEAD", sha1, 0, NULL);
 		if (!is_bare_repository() && head && !strcmp(head, ref->buf))
-			die("Cannot force update the current branch.");
+			die(_("Cannot force update the current branch."));
 	}
 	return 1;
 }
+
+static const char upstream_not_branch[] =
+N_("Cannot setup tracking information; starting point '%s' is not a branch.");
+static const char upstream_missing[] =
+N_("the requested upstream branch '%s' does not exist");
+static const char upstream_advice[] =
+N_("\n"
+"If you are planning on basing your work on an upstream\n"
+"branch that already exists at the remote, you may need to\n"
+"run \"git fetch\" to retrieve it.\n"
+"\n"
+"If you are planning to push out a new local branch that\n"
+"will track its remote counterpart, you may want to use\n"
+"\"git push -u\" to set the upstream config as you push.");
 
 void create_branch(const char *head,
 		   const char *name, const char *start_name,
@@ -224,38 +238,47 @@ void create_branch(const char *head,
 	}
 
 	real_ref = NULL;
-	if (get_sha1(start_name, sha1))
-		die("Not a valid object name: '%s'.", start_name);
+	if (get_sha1(start_name, sha1)) {
+		if (explicit_tracking) {
+			if (advice_set_upstream_failure) {
+				error(_(upstream_missing), start_name);
+				advise(_(upstream_advice));
+				exit(1);
+			}
+			die(_(upstream_missing), start_name);
+		}
+		die(_("Not a valid object name: '%s'."), start_name);
+	}
 
 	switch (dwim_ref(start_name, strlen(start_name), sha1, &real_ref)) {
 	case 0:
 		/* Not branching from any existing branch */
 		if (explicit_tracking)
-			die("Cannot setup tracking information; starting point is not a branch.");
+			die(_(upstream_not_branch), start_name);
 		break;
 	case 1:
 		/* Unique completion -- good, only if it is a real branch */
 		if (prefixcmp(real_ref, "refs/heads/") &&
 		    prefixcmp(real_ref, "refs/remotes/")) {
 			if (explicit_tracking)
-				die("Cannot setup tracking information; starting point is not a branch.");
+				die(_(upstream_not_branch), start_name);
 			else
 				real_ref = NULL;
 		}
 		break;
 	default:
-		die("Ambiguous object name: '%s'.", start_name);
+		die(_("Ambiguous object name: '%s'."), start_name);
 		break;
 	}
 
 	if ((commit = lookup_commit_reference(sha1)) == NULL)
-		die("Not a valid branch point: '%s'.", start_name);
+		die(_("Not a valid branch point: '%s'."), start_name);
 	hashcpy(sha1, commit->object.sha1);
 
 	if (!dont_change_ref) {
 		lock = lock_any_ref_for_update(ref.buf, NULL, 0);
 		if (!lock)
-			die_errno("Failed to lock ref for update");
+			die_errno(_("Failed to lock ref for update"));
 	}
 
 	if (reflog)
@@ -273,7 +296,7 @@ void create_branch(const char *head,
 
 	if (!dont_change_ref)
 		if (write_ref_sha1(lock, sha1, msg) < 0)
-			die_errno("Failed to write ref");
+			die_errno(_("Failed to write ref"));
 
 	strbuf_release(&ref);
 	free(real_ref);

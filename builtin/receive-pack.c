@@ -61,6 +61,11 @@ static enum deny_action parse_deny_action(const char *var, const char *value)
 
 static int receive_pack_config(const char *var, const char *value, void *cb)
 {
+	int status = parse_hide_refs_config(var, value, "receive");
+
+	if (status)
+		return status;
+
 	if (strcmp(var, "receive.denydeletes") == 0) {
 		deny_deletes = git_config_bool(var, value);
 		return 0;
@@ -126,6 +131,9 @@ static int receive_pack_config(const char *var, const char *value, void *cb)
 
 static void show_ref(const char *path, const unsigned char *sha1)
 {
+	if (ref_is_hidden(path))
+		return;
+
 	if (sent_capabilities)
 		packet_write(1, "%s %s\n", sha1_to_hex(sha1), path);
 	else
@@ -189,9 +197,6 @@ struct command {
 	char ref_name[FLEX_ARRAY]; /* more */
 };
 
-static const char pre_receive_hook[] = "hooks/pre-receive";
-static const char post_receive_hook[] = "hooks/post-receive";
-
 static void rp_error(const char *err, ...) __attribute__((format (printf, 1, 2)));
 static void rp_warning(const char *err, ...) __attribute__((format (printf, 1, 2)));
 
@@ -249,10 +254,10 @@ static int run_and_feed_hook(const char *hook_name, feed_fn feed, void *feed_sta
 	const char *argv[2];
 	int code;
 
-	if (access(hook_name, X_OK) < 0)
+	argv[0] = find_hook(hook_name);
+	if (!argv[0])
 		return 0;
 
-	argv[0] = hook_name;
 	argv[1] = NULL;
 
 	memset(&proc, 0, sizeof(proc));
@@ -338,15 +343,14 @@ static int run_receive_hook(struct command *commands, const char *hook_name,
 
 static int run_update_hook(struct command *cmd)
 {
-	static const char update_hook[] = "hooks/update";
 	const char *argv[5];
 	struct child_process proc;
 	int code;
 
-	if (access(update_hook, X_OK) < 0)
+	argv[0] = find_hook("update");
+	if (!argv[0])
 		return 0;
 
-	argv[0] = update_hook;
 	argv[1] = cmd->ref_name;
 	argv[2] = sha1_to_hex(cmd->old_sha1);
 	argv[3] = sha1_to_hex(cmd->new_sha1);
@@ -586,24 +590,25 @@ static const char *update(struct command *cmd)
 	}
 }
 
-static char update_post_hook[] = "hooks/post-update";
-
 static void run_update_post_hook(struct command *commands)
 {
 	struct command *cmd;
 	int argc;
 	const char **argv;
 	struct child_process proc;
+	char *hook;
 
+	hook = find_hook("post-update");
 	for (argc = 0, cmd = commands; cmd; cmd = cmd->next) {
 		if (cmd->error_string || cmd->did_not_exist)
 			continue;
 		argc++;
 	}
-	if (!argc || access(update_post_hook, X_OK) < 0)
+	if (!argc || !hook)
 		return;
+
 	argv = xmalloc(sizeof(*argv) * (2 + argc));
-	argv[0] = update_post_hook;
+	argv[0] = hook;
 
 	for (argc = 1, cmd = commands; cmd; cmd = cmd->next) {
 		char *p;
@@ -742,6 +747,20 @@ static int iterate_receive_command_list(void *cb_data, unsigned char sha1[20])
 	return -1; /* end of list */
 }
 
+static void reject_updates_to_hidden(struct command *commands)
+{
+	struct command *cmd;
+
+	for (cmd = commands; cmd; cmd = cmd->next) {
+		if (cmd->error_string || !ref_is_hidden(cmd->ref_name))
+			continue;
+		if (is_null_sha1(cmd->new_sha1))
+			cmd->error_string = "deny deleting a hidden ref";
+		else
+			cmd->error_string = "deny updating a hidden ref";
+	}
+}
+
 static void execute_commands(struct command *commands, const char *unpacker_error)
 {
 	struct command *cmd;
@@ -758,7 +777,9 @@ static void execute_commands(struct command *commands, const char *unpacker_erro
 				       0, &cmd))
 		set_connectivity_errors(commands);
 
-	if (run_receive_hook(commands, pre_receive_hook, 0)) {
+	reject_updates_to_hidden(commands);
+
+	if (run_receive_hook(commands, "pre-receive", 0)) {
 		for (cmd = commands; cmd; cmd = cmd->next) {
 			if (!cmd->error_string)
 				cmd->error_string = "pre-receive hook declined";
@@ -787,17 +808,15 @@ static struct command *read_head_info(void)
 	struct command *commands = NULL;
 	struct command **p = &commands;
 	for (;;) {
-		static char line[1000];
+		char *line;
 		unsigned char old_sha1[20], new_sha1[20];
 		struct command *cmd;
 		char *refname;
 		int len, reflen;
 
-		len = packet_read_line(0, line, sizeof(line));
-		if (!len)
+		line = packet_read_line(0, &len);
+		if (!line)
 			break;
-		if (line[len-1] == '\n')
-			line[--len] = 0;
 		if (len < 83 ||
 		    line[40] != ' ' ||
 		    line[81] != ' ' ||
@@ -861,8 +880,11 @@ static const char *unpack(int err_fd)
 			    : 0);
 
 	hdr_err = parse_pack_header(&hdr);
-	if (hdr_err)
+	if (hdr_err) {
+		if (err_fd > 0)
+			close(err_fd);
 		return hdr_err;
+	}
 	snprintf(hdr_arg, sizeof(hdr_arg),
 			"--pack_header=%"PRIu32",%"PRIu32,
 			ntohl(hdr.hdr_version), ntohl(hdr.hdr_entries));
@@ -965,7 +987,7 @@ static void report(struct command *commands, const char *unpack_status)
 	if (use_sideband)
 		send_sideband(1, 1, buf.buf, buf.len, use_sideband);
 	else
-		safe_write(1, buf.buf, buf.len);
+		write_or_die(1, buf.buf, buf.len);
 	strbuf_release(&buf);
 }
 
@@ -1048,7 +1070,7 @@ int cmd_receive_pack(int argc, const char **argv, const char *prefix)
 			unlink_or_warn(pack_lockfile);
 		if (report_status)
 			report(commands, unpack_status);
-		run_receive_hook(commands, post_receive_hook, 1);
+		run_receive_hook(commands, "post-receive", 1);
 		run_update_post_hook(commands);
 		if (auto_gc) {
 			const char *argv_gc_auto[] = {

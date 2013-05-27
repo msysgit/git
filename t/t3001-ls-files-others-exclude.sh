@@ -103,7 +103,7 @@ test_expect_success \
      test_cmp expect output'
 
 test_expect_success 'restore gitignore' '
-	git checkout $allignores &&
+	git checkout --ignore-skip-worktree-bits $allignores &&
 	rm .git/index
 '
 
@@ -214,9 +214,76 @@ test_expect_success 'subdirectory ignore (l1)' '
 	test_cmp expect actual
 '
 
+test_expect_success 'show/hide empty ignored directory (setup)' '
+	rm top/l1/l2/l1 &&
+	rm top/l1/.gitignore
+'
+
+test_expect_success 'show empty ignored directory with --directory' '
+	(
+		cd top &&
+		git ls-files -o -i --exclude l1 --directory
+	) >actual &&
+	echo l1/ >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'hide empty ignored directory with --no-empty-directory' '
+	(
+		cd top &&
+		git ls-files -o -i --exclude l1 --directory --no-empty-directory
+	) >actual &&
+	>expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'show/hide empty ignored sub-directory (setup)' '
+	> top/l1/tracked &&
+	(
+		cd top &&
+		git add -f l1/tracked
+	)
+'
+
+test_expect_success 'show empty ignored sub-directory with --directory' '
+	(
+		cd top &&
+		git ls-files -o -i --exclude l1 --directory
+	) >actual &&
+	echo l1/l2/ >expect &&
+	test_cmp expect actual
+'
+
+test_expect_success 'hide empty ignored sub-directory with --no-empty-directory' '
+	(
+		cd top &&
+		git ls-files -o -i --exclude l1 --directory --no-empty-directory
+	) >actual &&
+	>expect &&
+	test_cmp expect actual
+'
+
 test_expect_success 'pattern matches prefix completely' '
 	: >expect &&
 	git ls-files -i -o --exclude "/three/a.3[abc]" >actual &&
+	test_cmp expect actual
+'
+
+test_expect_success 'ls-files with "**" patterns' '
+	cat <<\EOF >expect &&
+a.1
+one/a.1
+one/two/a.1
+three/a.1
+EOF
+	git ls-files -o -i --exclude "**/a.1" >actual
+	test_cmp expect actual
+'
+
+
+test_expect_success 'ls-files with "**" patterns and no slashes' '
+	: >expect &&
+	git ls-files -o -i --exclude "one**a.1" >actual &&
 	test_cmp expect actual
 '
 

@@ -25,7 +25,7 @@ SYNOPSIS
 	   [-W | --function-context]
 	   [-f <file>] [-e] <pattern>
 	   [--and|--or|--not|(|)|-e <pattern>...]
-	   [ [--exclude-standard] [--cached | --no-index | --untracked] | <tree>...]
+	   [ [--[no-]exclude-standard] [--cached | --no-index | --untracked] | <tree>...]
 	   [--] [<pathspec>...]
 
 DESCRIPTION
@@ -61,7 +61,7 @@ OPTIONS
 	blobs registered in the index file.
 
 --no-index::
-	Search files in the current directory that is not managed by git.
+	Search files in the current directory that is not managed by Git.
 
 --untracked::
 	In addition to searching in the tracked files in the working

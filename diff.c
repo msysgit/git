@@ -36,6 +36,7 @@ static int diff_no_prefix;
 static int diff_stat_graph_width;
 static int diff_dirstat_permille_default = 30;
 static struct diff_options default_diff_options;
+static long diff_algorithm;
 
 static char diff_colors[][COLOR_MAXLEN] = {
 	GIT_COLOR_RESET,
@@ -143,6 +144,21 @@ static int git_config_rename(const char *var, const char *value)
 	return git_config_bool(var,value) ? DIFF_DETECT_RENAME : 0;
 }
 
+long parse_algorithm_value(const char *value)
+{
+	if (!value)
+		return -1;
+	else if (!strcasecmp(value, "myers") || !strcasecmp(value, "default"))
+		return 0;
+	else if (!strcasecmp(value, "minimal"))
+		return XDF_NEED_MINIMAL;
+	else if (!strcasecmp(value, "patience"))
+		return XDF_PATIENCE_DIFF;
+	else if (!strcasecmp(value, "histogram"))
+		return XDF_HISTOGRAM_DIFF;
+	return -1;
+}
+
 /*
  * These are to give UI layer defaults.
  * The core-level commands such as git-diff-files should
@@ -193,6 +209,13 @@ int git_diff_ui_config(const char *var, const char *value, void *cb)
 		if (parse_submodule_params(&default_diff_options, value))
 			warning(_("Unknown value for 'diff.submodule' config variable: '%s'"),
 				value);
+		return 0;
+	}
+
+	if (!strcmp(var, "diff.algorithm")) {
+		diff_algorithm = parse_algorithm_value(value);
+		if (diff_algorithm < 0)
+			return -1;
 		return 0;
 	}
 
@@ -402,12 +425,7 @@ static void emit_line_0(struct diff_options *o, const char *set, const char *res
 	int nofirst;
 	FILE *file = o->file;
 
-	if (o->output_prefix) {
-		struct strbuf *msg = NULL;
-		msg = o->output_prefix(o, o->output_prefix_data);
-		assert(msg);
-		fwrite(msg->buf, msg->len, 1, file);
-	}
+	fputs(diff_line_prefix(o), file);
 
 	if (len == 0) {
 		has_trailing_newline = (first == '\n');
@@ -625,13 +643,7 @@ static void emit_rewrite_diff(const char *name_a,
 	char *data_one, *data_two;
 	size_t size_one, size_two;
 	struct emit_callback ecbdata;
-	char *line_prefix = "";
-	struct strbuf *msgbuf;
-
-	if (o && o->output_prefix) {
-		msgbuf = o->output_prefix(o, o->output_prefix_data);
-		line_prefix = msgbuf->buf;
-	}
+	const char *line_prefix = diff_line_prefix(o);
 
 	if (diff_mnemonic_prefix && DIFF_OPT_TST(o, REVERSE_DIFF)) {
 		a_prefix = o->b_prefix;
@@ -827,18 +839,14 @@ static void fn_out_diff_words_aux(void *priv, char *line, unsigned long len)
 	int minus_first, minus_len, plus_first, plus_len;
 	const char *minus_begin, *minus_end, *plus_begin, *plus_end;
 	struct diff_options *opt = diff_words->opt;
-	struct strbuf *msgbuf;
-	char *line_prefix = "";
+	const char *line_prefix;
 
 	if (line[0] != '@' || parse_hunk_header(line, len,
 			&minus_first, &minus_len, &plus_first, &plus_len))
 		return;
 
 	assert(opt);
-	if (opt->output_prefix) {
-		msgbuf = opt->output_prefix(opt, opt->output_prefix_data);
-		line_prefix = msgbuf->buf;
-	}
+	line_prefix = diff_line_prefix(opt);
 
 	/* POSIX requires that first be decremented by one if len == 0... */
 	if (minus_len) {
@@ -962,14 +970,10 @@ static void diff_words_show(struct diff_words_data *diff_words)
 	struct diff_words_style *style = diff_words->style;
 
 	struct diff_options *opt = diff_words->opt;
-	struct strbuf *msgbuf;
-	char *line_prefix = "";
+	const char *line_prefix;
 
 	assert(opt);
-	if (opt->output_prefix) {
-		msgbuf = opt->output_prefix(opt, opt->output_prefix_data);
-		line_prefix = msgbuf->buf;
-	}
+	line_prefix = diff_line_prefix(opt);
 
 	/* special case: only removal */
 	if (!diff_words->plus.text.size) {
@@ -1105,6 +1109,16 @@ const char *diff_get_color(int diff_use_color, enum color_diff ix)
 	return "";
 }
 
+const char *diff_line_prefix(struct diff_options *opt)
+{
+	struct strbuf *msgbuf;
+	if (!opt->output_prefix)
+		return "";
+
+	msgbuf = opt->output_prefix(opt, opt->output_prefix_data);
+	return msgbuf->buf;
+}
+
 static unsigned long sane_truncate_line(struct emit_callback *ecb, char *line, unsigned long len)
 {
 	const char *cp;
@@ -1145,13 +1159,7 @@ static void fn_out_consume(void *priv, char *line, unsigned long len)
 	const char *plain = diff_get_color(ecbdata->color_diff, DIFF_PLAIN);
 	const char *reset = diff_get_color(ecbdata->color_diff, DIFF_RESET);
 	struct diff_options *o = ecbdata->opt;
-	char *line_prefix = "";
-	struct strbuf *msgbuf;
-
-	if (o && o->output_prefix) {
-		msgbuf = o->output_prefix(o, o->output_prefix_data);
-		line_prefix = msgbuf->buf;
-	}
+	const char *line_prefix = diff_line_prefix(o);
 
 	if (ecbdata->header) {
 		fprintf(ecbdata->opt->file, "%s", ecbdata->header->buf);
@@ -1256,6 +1264,7 @@ static char *pprint_rename(const char *a, const char *b)
 	const char *new = b;
 	struct strbuf name = STRBUF_INIT;
 	int pfx_length, sfx_length;
+	int pfx_adjust_for_slash;
 	int len_a = strlen(a);
 	int len_b = strlen(b);
 	int a_midlen, b_midlen;
@@ -1282,7 +1291,18 @@ static char *pprint_rename(const char *a, const char *b)
 	old = a + len_a;
 	new = b + len_b;
 	sfx_length = 0;
-	while (a <= old && b <= new && *old == *new) {
+	/*
+	 * If there is a common prefix, it must end in a slash.  In
+	 * that case we let this loop run 1 into the prefix to see the
+	 * same slash.
+	 *
+	 * If there is no common prefix, we cannot do this as it would
+	 * underrun the input strings.
+	 */
+	pfx_adjust_for_slash = (pfx_length ? 1 : 0);
+	while (a + pfx_length - pfx_adjust_for_slash <= old &&
+	       b + pfx_length - pfx_adjust_for_slash <= new &&
+	       *old == *new) {
 		if (*old == '/')
 			sfx_length = len_a - (old - a);
 		old--;
@@ -1475,16 +1495,11 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 	const char *reset, *add_c, *del_c;
 	const char *line_prefix = "";
 	int extra_shown = 0;
-	struct strbuf *msg = NULL;
 
 	if (data->nr == 0)
 		return;
 
-	if (options->output_prefix) {
-		msg = options->output_prefix(options, options->output_prefix_data);
-		line_prefix = msg->buf;
-	}
-
+	line_prefix = diff_line_prefix(options);
 	count = options->stat_count ? options->stat_count : data->nr;
 
 	reset = diff_get_color_opt(options, DIFF_RESET);
@@ -1550,7 +1565,7 @@ static void show_stats(struct diffstat_t *data, struct diff_options *options)
 	 * Binary files are displayed with "Bin XXX -> YYY bytes"
 	 * instead of the change count and graph. This part is treated
 	 * similarly to the graph part, except that it is not
-	 * "scaled". If total width is too small to accomodate the
+	 * "scaled". If total width is too small to accommodate the
 	 * guaranteed minimum width of the filename part and the
 	 * separators and this message, this message will "overflow"
 	 * making the line longer than the maximum width.
@@ -1736,12 +1751,7 @@ static void show_shortstats(struct diffstat_t *data, struct diff_options *option
 			dels += deleted;
 		}
 	}
-	if (options->output_prefix) {
-		struct strbuf *msg = NULL;
-		msg = options->output_prefix(options,
-				options->output_prefix_data);
-		fprintf(options->file, "%s", msg->buf);
-	}
+	fprintf(options->file, "%s", diff_line_prefix(options));
 	print_stat_summary(options->file, total_files, adds, dels);
 }
 
@@ -1755,12 +1765,7 @@ static void show_numstat(struct diffstat_t *data, struct diff_options *options)
 	for (i = 0; i < data->nr; i++) {
 		struct diffstat_file *file = data->files[i];
 
-		if (options->output_prefix) {
-			struct strbuf *msg = NULL;
-			msg = options->output_prefix(options,
-					options->output_prefix_data);
-			fprintf(options->file, "%s", msg->buf);
-		}
+		fprintf(options->file, "%s", diff_line_prefix(options));
 
 		if (file->is_binary)
 			fprintf(options->file, "-\t-\t");
@@ -1802,13 +1807,7 @@ static long gather_dirstat(struct diff_options *opt, struct dirstat_dir *dir,
 {
 	unsigned long this_dir = 0;
 	unsigned int sources = 0;
-	const char *line_prefix = "";
-	struct strbuf *msg = NULL;
-
-	if (opt->output_prefix) {
-		msg = opt->output_prefix(opt, opt->output_prefix_data);
-		line_prefix = msg->buf;
-	}
+	const char *line_prefix = diff_line_prefix(opt);
 
 	while (dir->nr) {
 		struct dirstat_file *f = dir->files;
@@ -2058,15 +2057,10 @@ static void checkdiff_consume(void *priv, char *line, unsigned long len)
 	const char *reset = diff_get_color(data->o->use_color, DIFF_RESET);
 	const char *set = diff_get_color(data->o->use_color, DIFF_FILE_NEW);
 	char *err;
-	char *line_prefix = "";
-	struct strbuf *msgbuf;
+	const char *line_prefix;
 
 	assert(data->o);
-	if (data->o->output_prefix) {
-		msgbuf = data->o->output_prefix(data->o,
-			data->o->output_prefix_data);
-		line_prefix = msgbuf->buf;
-	}
+	line_prefix = diff_line_prefix(data->o);
 
 	if (line[0] == '+') {
 		unsigned bad;
@@ -2123,7 +2117,8 @@ static unsigned char *deflate_it(char *data,
 	return deflated;
 }
 
-static void emit_binary_diff_body(FILE *file, mmfile_t *one, mmfile_t *two, char *prefix)
+static void emit_binary_diff_body(FILE *file, mmfile_t *one, mmfile_t *two,
+				  const char *prefix)
 {
 	void *cp;
 	void *delta;
@@ -2184,7 +2179,8 @@ static void emit_binary_diff_body(FILE *file, mmfile_t *one, mmfile_t *two, char
 	free(data);
 }
 
-static void emit_binary_diff(FILE *file, mmfile_t *one, mmfile_t *two, char *prefix)
+static void emit_binary_diff(FILE *file, mmfile_t *one, mmfile_t *two,
+			     const char *prefix)
 {
 	fprintf(file, "%sGIT binary patch\n", prefix);
 	emit_binary_diff_body(file, one, two, prefix);
@@ -2251,13 +2247,7 @@ static void builtin_diff(const char *name_a,
 	struct userdiff_driver *textconv_one = NULL;
 	struct userdiff_driver *textconv_two = NULL;
 	struct strbuf header = STRBUF_INIT;
-	struct strbuf *msgbuf;
-	char *line_prefix = "";
-
-	if (o->output_prefix) {
-		msgbuf = o->output_prefix(o, o->output_prefix_data);
-		line_prefix = msgbuf->buf;
-	}
+	const char *line_prefix = diff_line_prefix(o);
 
 	if (DIFF_OPT_TST(o, SUBMODULE_LOG) &&
 			(!one->mode || S_ISGITLINK(one->mode)) &&
@@ -2265,6 +2255,7 @@ static void builtin_diff(const char *name_a,
 		const char *del = diff_get_color_opt(o, DIFF_FILE_OLD);
 		const char *add = diff_get_color_opt(o, DIFF_FILE_NEW);
 		show_submodule_summary(o->file, one ? one->path : two->path,
+				line_prefix,
 				one->sha1, two->sha1, two->dirty_submodule,
 				meta, del, add, reset);
 		return;
@@ -2956,14 +2947,9 @@ static void fill_metainfo(struct strbuf *msg,
 {
 	const char *set = diff_get_color(use_color, DIFF_METAINFO);
 	const char *reset = diff_get_color(use_color, DIFF_RESET);
-	struct strbuf *msgbuf;
-	char *line_prefix = "";
+	const char *line_prefix = diff_line_prefix(o);
 
 	*must_show_header = 1;
-	if (o->output_prefix) {
-		msgbuf = o->output_prefix(o, o->output_prefix_data);
-		line_prefix = msgbuf->buf;
-	}
 	strbuf_init(msg, PATH_MAX * 2 + 300);
 	switch (p->status) {
 	case DIFF_STATUS_COPIED:
@@ -3213,6 +3199,7 @@ void diff_setup(struct diff_options *options)
 	options->add_remove = diff_addremove;
 	options->use_color = diff_use_color_default;
 	options->detect_rename = diff_detect_rename_default;
+	options->xdl_opts |= diff_algorithm;
 
 	if (diff_no_prefix) {
 		options->a_prefix = options->b_prefix = "";
@@ -3610,6 +3597,17 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 		options->xdl_opts = DIFF_WITH_ALG(options, PATIENCE_DIFF);
 	else if (!strcmp(arg, "--histogram"))
 		options->xdl_opts = DIFF_WITH_ALG(options, HISTOGRAM_DIFF);
+	else if ((argcount = parse_long_opt("diff-algorithm", av, &optarg))) {
+		long value = parse_algorithm_value(optarg);
+		if (value < 0)
+			return error("option diff-algorithm accepts \"myers\", "
+				     "\"minimal\", \"patience\" and \"histogram\"");
+		/* clear out previous settings */
+		DIFF_XDL_CLR(options, NEED_MINIMAL);
+		options->xdl_opts &= ~XDF_DIFF_ALGORITHM_MASK;
+		options->xdl_opts |= value;
+		return argcount;
+	}
 
 	/* flags options */
 	else if (!strcmp(arg, "--binary")) {
@@ -3626,6 +3624,8 @@ int diff_opt_parse(struct diff_options *options, const char **av, int ac)
 		DIFF_OPT_SET(options, FIND_COPIES_HARDER);
 	else if (!strcmp(arg, "--follow"))
 		DIFF_OPT_SET(options, FOLLOW_RENAMES);
+	else if (!strcmp(arg, "--no-follow"))
+		DIFF_OPT_CLR(options, FOLLOW_RENAMES);
 	else if (!strcmp(arg, "--color"))
 		options->use_color = 1;
 	else if (!prefixcmp(arg, "--color=")) {
@@ -3898,12 +3898,8 @@ static void diff_flush_raw(struct diff_filepair *p, struct diff_options *opt)
 {
 	int line_termination = opt->line_termination;
 	int inter_name_termination = line_termination ? '\t' : '\0';
-	if (opt->output_prefix) {
-		struct strbuf *msg = NULL;
-		msg = opt->output_prefix(opt, opt->output_prefix_data);
-		fprintf(opt->file, "%s", msg->buf);
-	}
 
+	fprintf(opt->file, "%s", diff_line_prefix(opt));
 	if (!(opt->output_format & DIFF_FORMAT_NAME_STATUS)) {
 		fprintf(opt->file, ":%06o %06o %s ", p->one->mode, p->two->mode,
 			diff_unique_abbrev(p->one->sha1, opt->abbrev));
@@ -4173,12 +4169,7 @@ static void show_rename_copy(FILE *file, const char *renamecopy, struct diff_fil
 static void diff_summary(struct diff_options *opt, struct diff_filepair *p)
 {
 	FILE *file = opt->file;
-	char *line_prefix = "";
-
-	if (opt->output_prefix) {
-		struct strbuf *buf = opt->output_prefix(opt, opt->output_prefix_data);
-		line_prefix = buf->buf;
-	}
+	const char *line_prefix = diff_line_prefix(opt);
 
 	switch(p->status) {
 	case DIFF_STATUS_DELETED:
@@ -4479,13 +4470,9 @@ void diff_flush(struct diff_options *options)
 
 	if (output_format & DIFF_FORMAT_PATCH) {
 		if (separator) {
-			if (options->output_prefix) {
-				struct strbuf *msg = NULL;
-				msg = options->output_prefix(options,
-					options->output_prefix_data);
-				fwrite(msg->buf, msg->len, 1, stdout);
-			}
-			putc(options->line_termination, options->file);
+			fprintf(options->file, "%s%c",
+				diff_line_prefix(options),
+				options->line_termination);
 			if (options->stat_sep) {
 				/* attach patch instead of inline */
 				fputs(options->stat_sep, options->file);
@@ -4689,7 +4676,7 @@ int diff_result_code(struct diff_options *opt, int status)
 {
 	int result = 0;
 
-	diff_warn_rename_limit("diff.renamelimit",
+	diff_warn_rename_limit("diff.renameLimit",
 			       opt->needed_rename_limit,
 			       opt->degraded_cc_to_c);
 	if (!DIFF_OPT_TST(opt, EXIT_WITH_STATUS) &&

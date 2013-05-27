@@ -32,7 +32,7 @@ enum {
 
 static int all, append, dry_run, force, keep, multiple, prune, update_head_ok, verbosity;
 static int progress = -1, recurse_submodules = RECURSE_SUBMODULES_DEFAULT;
-static int tags = TAGS_DEFAULT;
+static int tags = TAGS_DEFAULT, unshallow;
 static const char *depth;
 static const char *upload_pack;
 static struct strbuf default_rla = STRBUF_INIT;
@@ -82,6 +82,9 @@ static struct option builtin_fetch_options[] = {
 	OPT_BOOL(0, "progress", &progress, N_("force progress reporting")),
 	OPT_STRING(0, "depth", &depth, N_("depth"),
 		   N_("deepen history of shallow clone")),
+	{ OPTION_SET_INT, 0, "unshallow", &unshallow, NULL,
+		   N_("convert to a complete repository"),
+		   PARSE_OPT_NONEG | PARSE_OPT_NOARG, NULL, 1 },
 	{ OPTION_STRING, 0, "submodule-prefix", &submodule_prefix, N_("dir"),
 		   N_("prepend this to submodule path output"), PARSE_OPT_HIDDEN },
 	{ OPTION_STRING, 0, "recurse-submodules-default",
@@ -959,6 +962,9 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 	struct string_list list = STRING_LIST_INIT_NODUP;
 	struct remote *remote;
 	int result = 0;
+	static const char *argv_gc_auto[] = {
+		"gc", "--auto", NULL,
+	};
 
 	packet_trace_identity("fetch");
 
@@ -969,6 +975,18 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 
 	argc = parse_options(argc, argv, prefix,
 			     builtin_fetch_options, builtin_fetch_usage, 0);
+
+	if (unshallow) {
+		if (depth)
+			die(_("--depth and --unshallow cannot be used together"));
+		else if (!is_repository_shallow())
+			die(_("--unshallow on a complete repository does not make sense"));
+		else {
+			static char inf_depth[12];
+			sprintf(inf_depth, "%d", INFINITE_DEPTH);
+			depth = inf_depth;
+		}
+	}
 
 	if (recurse_submodules != RECURSE_SUBMODULES_OFF) {
 		if (recurse_submodules_default) {
@@ -1025,6 +1043,8 @@ int cmd_fetch(int argc, const char **argv, const char *prefix)
 	/* All names were strdup()ed or strndup()ed */
 	list.strdup_strings = 1;
 	string_list_clear(&list, 0);
+
+	run_command_v_opt(argv_gc_auto, RUN_GIT_CMD);
 
 	return result;
 }

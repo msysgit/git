@@ -10,6 +10,7 @@ static inline void debug_mm(const char *format, ...) {}
 #endif
 
 const char *git_mailmap_file;
+const char *git_mailmap_blob;
 
 struct mailmap_info {
 	char *name;
@@ -129,54 +130,120 @@ static char *parse_name_and_email(char *buffer, char **name,
 	return (*right == '\0' ? NULL : right);
 }
 
-static int read_single_mailmap(struct string_list *map, const char *filename, char **repo_abbrev)
+static void read_mailmap_line(struct string_list *map, char *buffer,
+			      char **repo_abbrev)
+{
+	char *name1 = NULL, *email1 = NULL, *name2 = NULL, *email2 = NULL;
+	if (buffer[0] == '#') {
+		static const char abbrev[] = "# repo-abbrev:";
+		int abblen = sizeof(abbrev) - 1;
+		int len = strlen(buffer);
+
+		if (!repo_abbrev)
+			return;
+
+		if (len && buffer[len - 1] == '\n')
+			buffer[--len] = 0;
+		if (!strncmp(buffer, abbrev, abblen)) {
+			char *cp;
+
+			if (repo_abbrev)
+				free(*repo_abbrev);
+			*repo_abbrev = xmalloc(len);
+
+			for (cp = buffer + abblen; isspace(*cp); cp++)
+				; /* nothing */
+			strcpy(*repo_abbrev, cp);
+		}
+		return;
+	}
+	if ((name2 = parse_name_and_email(buffer, &name1, &email1, 0)) != NULL)
+		parse_name_and_email(name2, &name2, &email2, 1);
+
+	if (email1)
+		add_mapping(map, name1, email1, name2, email2);
+}
+
+static int read_mailmap_file(struct string_list *map, const char *filename,
+			     char **repo_abbrev)
 {
 	char buffer[1024];
-	FILE *f = (filename == NULL ? NULL : fopen(filename, "r"));
+	FILE *f;
 
-	if (f == NULL)
-		return 1;
-	while (fgets(buffer, sizeof(buffer), f) != NULL) {
-		char *name1 = NULL, *email1 = NULL, *name2 = NULL, *email2 = NULL;
-		if (buffer[0] == '#') {
-			static const char abbrev[] = "# repo-abbrev:";
-			int abblen = sizeof(abbrev) - 1;
-			int len = strlen(buffer);
+	if (!filename)
+		return 0;
 
-			if (!repo_abbrev)
-				continue;
-
-			if (len && buffer[len - 1] == '\n')
-				buffer[--len] = 0;
-			if (!strncmp(buffer, abbrev, abblen)) {
-				char *cp;
-
-				if (repo_abbrev)
-					free(*repo_abbrev);
-				*repo_abbrev = xmalloc(len);
-
-				for (cp = buffer + abblen; isspace(*cp); cp++)
-					; /* nothing */
-				strcpy(*repo_abbrev, cp);
-			}
-			continue;
-		}
-		if ((name2 = parse_name_and_email(buffer, &name1, &email1, 0)) != NULL)
-			parse_name_and_email(name2, &name2, &email2, 1);
-
-		if (email1)
-			add_mapping(map, name1, email1, name2, email2);
+	f = fopen(filename, "r");
+	if (!f) {
+		if (errno == ENOENT)
+			return 0;
+		return error("unable to open mailmap at %s: %s",
+			     filename, strerror(errno));
 	}
+
+	while (fgets(buffer, sizeof(buffer), f) != NULL)
+		read_mailmap_line(map, buffer, repo_abbrev);
 	fclose(f);
+	return 0;
+}
+
+static void read_mailmap_buf(struct string_list *map,
+			     const char *buf, unsigned long len,
+			     char **repo_abbrev)
+{
+	while (len) {
+		const char *end = strchrnul(buf, '\n');
+		unsigned long linelen = end - buf + 1;
+		char *line = xmemdupz(buf, linelen);
+
+		read_mailmap_line(map, line, repo_abbrev);
+
+		free(line);
+		buf += linelen;
+		len -= linelen;
+	}
+}
+
+static int read_mailmap_blob(struct string_list *map,
+			     const char *name,
+			     char **repo_abbrev)
+{
+	unsigned char sha1[20];
+	char *buf;
+	unsigned long size;
+	enum object_type type;
+
+	if (!name)
+		return 0;
+	if (get_sha1(name, sha1) < 0)
+		return 0;
+
+	buf = read_sha1_file(sha1, &type, &size);
+	if (!buf)
+		return error("unable to read mailmap object at %s", name);
+	if (type != OBJ_BLOB)
+		return error("mailmap is not a blob: %s", name);
+
+	read_mailmap_buf(map, buf, size, repo_abbrev);
+
+	free(buf);
 	return 0;
 }
 
 int read_mailmap(struct string_list *map, char **repo_abbrev)
 {
+	int err = 0;
+
 	map->strdup_strings = 1;
-	/* each failure returns 1, so >1 means both calls failed */
-	return read_single_mailmap(map, ".mailmap", repo_abbrev) +
-	       read_single_mailmap(map, git_mailmap_file, repo_abbrev) > 1;
+	map->cmp = strcasecmp;
+
+	if (!git_mailmap_blob && is_bare_repository())
+		git_mailmap_blob = "HEAD:.mailmap";
+
+	err |= read_mailmap_file(map, ".mailmap", repo_abbrev);
+	err |= read_mailmap_blob(map, git_mailmap_blob, repo_abbrev);
+	err |= read_mailmap_file(map, git_mailmap_file, repo_abbrev);
+	return err;
 }
 
 void clear_mailmap(struct string_list *map)
@@ -187,60 +254,95 @@ void clear_mailmap(struct string_list *map)
 	debug_mm("mailmap: cleared\n");
 }
 
-int map_user(struct string_list *map,
-	     char *email, int maxlen_email, char *name, int maxlen_name)
+/*
+ * Look for an entry in map that match string[0:len]; string[len]
+ * does not have to be NUL (but it could be).
+ */
+static struct string_list_item *lookup_prefix(struct string_list *map,
+					      const char *string, size_t len)
 {
-	char *end_of_email;
+	int i = string_list_find_insert_index(map, string, 1);
+	if (i < 0) {
+		/* exact match */
+		i = -1 - i;
+		if (!string[len])
+			return &map->items[i];
+		/*
+		 * that map entry matches exactly to the string, including
+		 * the cruft at the end beyond "len".  That is not a match
+		 * with string[0:len] that we are looking for.
+		 */
+	} else if (!string[len]) {
+		/*
+		 * asked with the whole string, and got nothing.  No
+		 * matching entry can exist in the map.
+		 */
+		return NULL;
+	}
+
+	/*
+	 * i is at the exact match to an overlong key, or location the
+	 * overlong key would be inserted, which must come after the
+	 * real location of the key if one exists.
+	 */
+	while (0 <= --i && i < map->nr) {
+		int cmp = strncasecmp(map->items[i].string, string, len);
+		if (cmp < 0)
+			/*
+			 * "i" points at a key definitely below the prefix;
+			 * the map does not have string[0:len] in it.
+			 */
+			break;
+		else if (!cmp && !map->items[i].string[len])
+			/* found it */
+			return &map->items[i];
+		/*
+		 * otherwise, the string at "i" may be string[0:len]
+		 * followed by a string that sorts later than string[len:];
+		 * keep trying.
+		 */
+	}
+	return NULL;
+}
+
+int map_user(struct string_list *map,
+			 const char **email, size_t *emaillen,
+			 const char **name, size_t *namelen)
+{
 	struct string_list_item *item;
 	struct mailmap_entry *me;
-	char buf[1024], *mailbuf;
-	int i;
 
-	/* figure out space requirement for email */
-	end_of_email = strchr(email, '>');
-	if (!end_of_email) {
-		/* email passed in might not be wrapped in <>, but end with a \0 */
-		end_of_email = memchr(email, '\0', maxlen_email);
-		if (!end_of_email)
-			return 0;
-	}
-	if (end_of_email - email + 1 < sizeof(buf))
-		mailbuf = buf;
-	else
-		mailbuf = xmalloc(end_of_email - email + 1);
+	debug_mm("map_user: map '%.*s' <%.*s>\n",
+		 *name, *namelen, *emaillen, *email);
 
-	/* downcase the email address */
-	for (i = 0; i < end_of_email - email; i++)
-		mailbuf[i] = tolower(email[i]);
-	mailbuf[i] = 0;
-
-	debug_mm("map_user: map '%s' <%s>\n", name, mailbuf);
-	item = string_list_lookup(map, mailbuf);
+	item = lookup_prefix(map, *email, *emaillen);
 	if (item != NULL) {
 		me = (struct mailmap_entry *)item->util;
 		if (me->namemap.nr) {
 			/* The item has multiple items, so we'll look up on name too */
 			/* If the name is not found, we choose the simple entry      */
-			struct string_list_item *subitem = string_list_lookup(&me->namemap, name);
+			struct string_list_item *subitem;
+			subitem = lookup_prefix(&me->namemap, *name, *namelen);
 			if (subitem)
 				item = subitem;
 		}
 	}
-	if (mailbuf != buf)
-		free(mailbuf);
 	if (item != NULL) {
 		struct mailmap_info *mi = (struct mailmap_info *)item->util;
-		if (mi->name == NULL && (mi->email == NULL || maxlen_email == 0)) {
+		if (mi->name == NULL && mi->email == NULL) {
 			debug_mm("map_user:  -- (no simple mapping)\n");
 			return 0;
 		}
-		if (maxlen_email && mi->email)
-			strlcpy(email, mi->email, maxlen_email);
-		else
-			*end_of_email = '\0';
-		if (maxlen_name && mi->name)
-			strlcpy(name, mi->name, maxlen_name);
-		debug_mm("map_user:  to '%s' <%s>\n", name, mi->email ? mi->email : "");
+		if (mi->email) {
+				*email = mi->email;
+				*emaillen = strlen(*email);
+		}
+		if (mi->name) {
+				*name = mi->name;
+				*namelen = strlen(*name);
+		}
+		debug_mm("map_user:  to '%.*s' <.*%s>\n", *namelen, *name,
+				 *emaillen, *email);
 		return 1;
 	}
 	debug_mm("map_user:  --\n");

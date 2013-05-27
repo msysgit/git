@@ -11,7 +11,11 @@
 #include "list-objects.h"
 #include "sigchain.h"
 
+#ifdef EXPAT_NEEDS_XMLPARSE_H
+#include <xmlparse.h>
+#else
 #include <expat.h>
+#endif
 
 static const char http_push_usage[] =
 "git http-push [--all] [--dry-run] [--force] [--verbose] <remote> [<head>...]\n";
@@ -172,28 +176,7 @@ enum dav_header_flag {
 static char *xml_entities(const char *s)
 {
 	struct strbuf buf = STRBUF_INIT;
-	while (*s) {
-		size_t len = strcspn(s, "\"<>&");
-		strbuf_add(&buf, s, len);
-		s += len;
-		switch (*s) {
-		case '"':
-			strbuf_addstr(&buf, "&quot;");
-			break;
-		case '<':
-			strbuf_addstr(&buf, "&lt;");
-			break;
-		case '>':
-			strbuf_addstr(&buf, "&gt;");
-			break;
-		case '&':
-			strbuf_addstr(&buf, "&amp;");
-			break;
-		case 0:
-			return strbuf_detach(&buf, NULL);
-		}
-		s++;
-	}
+	strbuf_addstr_xml_quoted(&buf, s);
 	return strbuf_detach(&buf, NULL);
 }
 
@@ -1560,7 +1543,7 @@ static int remote_exists(const char *path)
 
 	sprintf(url, "%s%s", repo->url, path);
 
-	switch (http_get_strbuf(url, NULL, 0)) {
+	switch (http_get_strbuf(url, NULL, NULL, 0)) {
 	case HTTP_OK:
 		ret = 1;
 		break;
@@ -1568,7 +1551,7 @@ static int remote_exists(const char *path)
 		ret = 0;
 		break;
 	case HTTP_ERROR:
-		http_error(url, HTTP_ERROR);
+		error("unable to access '%s': %s", url, curl_errorstr);
 	default:
 		ret = -1;
 	}
@@ -1584,7 +1567,7 @@ static void fetch_symref(const char *path, char **symref, unsigned char *sha1)
 	url = xmalloc(strlen(repo->url) + strlen(path) + 1);
 	sprintf(url, "%s%s", repo->url, path);
 
-	if (http_get_strbuf(url, &buffer, 0) != HTTP_OK)
+	if (http_get_strbuf(url, NULL, &buffer, 0) != HTTP_OK)
 		die("Couldn't get %s for remote symref\n%s", url,
 		    curl_errorstr);
 	free(url);

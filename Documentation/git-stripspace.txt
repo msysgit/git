@@ -14,7 +14,7 @@ SYNOPSIS
 DESCRIPTION
 -----------
 
-Clean the input in the manner used by 'git' for text such as commit
+Clean the input in the manner used by Git for text such as commit
 messages, notes, tags and branch descriptions.
 
 With no arguments, this will:
@@ -35,7 +35,13 @@ OPTIONS
 -------
 -s::
 --strip-comments::
-	Skip and remove all lines starting with '#'.
+	Skip and remove all lines starting with comment character (default '#').
+
+-c::
+--comment-lines::
+	Prepend comment character and blank to each line. Lines will automatically
+	be terminated with a newline. On empty lines, only the comment character
+	will be prepended.
 
 EXAMPLES
 --------

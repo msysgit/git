@@ -1041,15 +1041,17 @@ static int gitdiff_renamedst(const char *line, struct patch *patch)
 
 static int gitdiff_similarity(const char *line, struct patch *patch)
 {
-	if ((patch->score = strtoul(line, NULL, 10)) == ULONG_MAX)
-		patch->score = 0;
+	unsigned long val = strtoul(line, NULL, 10);
+	if (val <= 100)
+		patch->score = val;
 	return 0;
 }
 
 static int gitdiff_dissimilarity(const char *line, struct patch *patch)
 {
-	if ((patch->score = strtoul(line, NULL, 10)) == ULONG_MAX)
-		patch->score = 0;
+	unsigned long val = strtoul(line, NULL, 10);
+	if (val <= 100)
+		patch->score = val;
 	return 0;
 }
 
@@ -1919,7 +1921,7 @@ static int parse_binary(char *buffer, unsigned long size, struct patch *patch)
 }
 
 /*
- * Read the patch text in "buffer" taht extends for "size" bytes; stop
+ * Read the patch text in "buffer" that extends for "size" bytes; stop
  * reading after seeing a single patch (i.e. changes to a single file).
  * Create fragments (i.e. patch hunks) and hang them to the given patch.
  * Return the number of bytes consumed, so that the caller can call us
@@ -2115,10 +2117,10 @@ static void update_pre_post_images(struct image *preimage,
 
 	/*
 	 * Adjust the common context lines in postimage. This can be
-	 * done in-place when we are just doing whitespace fixing,
-	 * which does not make the string grow, but needs a new buffer
-	 * when ignoring whitespace causes the update, since in this case
-	 * we could have e.g. tabs converted to multiple spaces.
+	 * done in-place when we are shrinking it with whitespace
+	 * fixing, but needs a new buffer when ignoring whitespace or
+	 * expanding leading tabs to spaces.
+	 *
 	 * We trust the caller to tell us if the update can be done
 	 * in place (postlen==0) or not.
 	 */
@@ -2183,7 +2185,7 @@ static int match_fragment(struct image *img,
 	int i;
 	char *fixed_buf, *buf, *orig, *target;
 	struct strbuf fixed;
-	size_t fixed_len;
+	size_t fixed_len, postlen;
 	int preimage_limit;
 
 	if (preimage->nr + try_lno <= img->nr) {
@@ -2333,6 +2335,7 @@ static int match_fragment(struct image *img,
 	strbuf_init(&fixed, preimage->len + 1);
 	orig = preimage->buf;
 	target = img->buf + try;
+	postlen = 0;
 	for (i = 0; i < preimage_limit; i++) {
 		size_t oldlen = preimage->line[i].len;
 		size_t tgtlen = img->line[try_lno + i].len;
@@ -2360,6 +2363,7 @@ static int match_fragment(struct image *img,
 		match = (tgtfix.len == fixed.len - fixstart &&
 			 !memcmp(tgtfix.buf, fixed.buf + fixstart,
 					     fixed.len - fixstart));
+		postlen += tgtfix.len;
 
 		strbuf_release(&tgtfix);
 		if (!match)
@@ -2397,8 +2401,10 @@ static int match_fragment(struct image *img,
 	 * hunk match.  Update the context lines in the postimage.
 	 */
 	fixed_buf = strbuf_detach(&fixed, &fixed_len);
+	if (postlen < postimage->len)
+		postlen = 0;
 	update_pre_post_images(preimage, postimage,
-			       fixed_buf, fixed_len, 0);
+			       fixed_buf, fixed_len, postlen);
 	return 1;
 
  unmatch_exit:
@@ -3023,7 +3029,7 @@ static struct patch *in_fn_table(const char *name)
  *
  * The latter is needed to deal with a case where two paths A and B
  * are swapped by first renaming A to B and then renaming B to A;
- * moving A to B should not be prevented due to presense of B as we
+ * moving A to B should not be prevented due to presence of B as we
  * will remove it in a later patch.
  */
 #define PATH_TO_BE_DELETED ((struct patch *) -2)
@@ -3507,7 +3513,7 @@ static int check_patch(struct patch *patch)
 	 *
 	 * A patch to swap-rename between A and B would first rename A
 	 * to B and then rename B to A.  While applying the first one,
-	 * the presense of B should not stop A from getting renamed to
+	 * the presence of B should not stop A from getting renamed to
 	 * B; ask to_be_deleted() about the later rename.  Removal of
 	 * B and rename from A to B is handled the same way by asking
 	 * was_deleted().
@@ -3598,6 +3604,40 @@ static int get_current_sha1(const char *path, unsigned char *sha1)
 	return 0;
 }
 
+static int preimage_sha1_in_gitlink_patch(struct patch *p, unsigned char sha1[20])
+{
+	/*
+	 * A usable gitlink patch has only one fragment (hunk) that looks like:
+	 * @@ -1 +1 @@
+	 * -Subproject commit <old sha1>
+	 * +Subproject commit <new sha1>
+	 * or
+	 * @@ -1 +0,0 @@
+	 * -Subproject commit <old sha1>
+	 * for a removal patch.
+	 */
+	struct fragment *hunk = p->fragments;
+	static const char heading[] = "-Subproject commit ";
+	char *preimage;
+
+	if (/* does the patch have only one hunk? */
+	    hunk && !hunk->next &&
+	    /* is its preimage one line? */
+	    hunk->oldpos == 1 && hunk->oldlines == 1 &&
+	    /* does preimage begin with the heading? */
+	    (preimage = memchr(hunk->patch, '\n', hunk->size)) != NULL &&
+	    !prefixcmp(++preimage, heading) &&
+	    /* does it record full SHA-1? */
+	    !get_sha1_hex(preimage + sizeof(heading) - 1, sha1) &&
+	    preimage[sizeof(heading) + 40 - 1] == '\n' &&
+	    /* does the abbreviated name on the index line agree with it? */
+	    !prefixcmp(preimage + sizeof(heading) - 1, p->old_sha1_prefix))
+		return 0; /* it all looks fine */
+
+	/* we may have full object name on the index line */
+	return get_sha1_hex(p->old_sha1_prefix, sha1);
+}
+
 /* Build an index that contains the just the files needed for a 3way merge */
 static void build_fake_ancestor(struct patch *list, const char *filename)
 {
@@ -3609,7 +3649,6 @@ static void build_fake_ancestor(struct patch *list, const char *filename)
 	 * worth showing the new sha1 prefix, but until then...
 	 */
 	for (patch = list; patch; patch = patch->next) {
-		const unsigned char *sha1_ptr;
 		unsigned char sha1[20];
 		struct cache_entry *ce;
 		const char *name;
@@ -3617,20 +3656,25 @@ static void build_fake_ancestor(struct patch *list, const char *filename)
 		name = patch->old_name ? patch->old_name : patch->new_name;
 		if (0 < patch->is_new)
 			continue;
-		else if (get_sha1_blob(patch->old_sha1_prefix, sha1))
-			/* git diff has no index line for mode/type changes */
-			if (!patch->lines_added && !patch->lines_deleted) {
-				if (get_current_sha1(patch->old_name, sha1))
-					die("mode change for %s, which is not "
-						"in current HEAD", name);
-				sha1_ptr = sha1;
-			} else
-				die("sha1 information is lacking or useless "
-					"(%s).", name);
-		else
-			sha1_ptr = sha1;
 
-		ce = make_cache_entry(patch->old_mode, sha1_ptr, name, 0, 0);
+		if (S_ISGITLINK(patch->old_mode)) {
+			if (!preimage_sha1_in_gitlink_patch(patch, sha1))
+				; /* ok, the textual part looks sane */
+			else
+				die("sha1 information is lacking or useless for submoule %s",
+				    name);
+		} else if (!get_sha1_blob(patch->old_sha1_prefix, sha1)) {
+			; /* ok */
+		} else if (!patch->lines_added && !patch->lines_deleted) {
+			/* mode-only change: update the current */
+			if (get_current_sha1(patch->old_name, sha1))
+				die("mode change for %s, which is not "
+				    "in current HEAD", name);
+		} else
+			die("sha1 information is lacking or useless "
+			    "(%s).", name);
+
+		ce = make_cache_entry(patch->old_mode, sha1, name, 0, 0);
 		if (!ce)
 			die(_("make_cache_entry failed for path '%s'"), name);
 		if (add_index_entry(&result, ce, ADD_CACHE_OK_TO_ADD))

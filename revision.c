@@ -13,6 +13,7 @@
 #include "decorate.h"
 #include "log-tree.h"
 #include "string-list.h"
+#include "mailmap.h"
 
 volatile show_early_output_fn_t show_early_output;
 
@@ -709,7 +710,7 @@ static int still_interesting(struct commit_list *src, unsigned long date, int sl
 	 * Does the destination list contain entries with a date
 	 * before the source list? Definitely _not_ done.
 	 */
-	if (date < src->item->date)
+	if (date <= src->item->date)
 		return SLOP;
 
 	/*
@@ -1277,7 +1278,8 @@ static void read_revisions_from_stdin(struct rev_info *revs,
 			}
 			die("options not supported in --stdin mode");
 		}
-		if (handle_revision_arg(sb.buf, revs, 0, REVARG_CANNOT_BE_FILENAME))
+		if (handle_revision_arg(xstrdup(sb.buf), revs, 0,
+					REVARG_CANNOT_BE_FILENAME))
 			die("bad revision '%s'", sb.buf);
 	}
 	if (seen_dashdash)
@@ -2023,10 +2025,11 @@ static struct commit_list **simplify_one(struct rev_info *revs, struct commit *c
 		if (revs->first_parent_only)
 			break;
 	}
-	if (!revs->first_parent_only)
-		cnt = remove_duplicate_parents(commit);
-	else
+
+	if (revs->first_parent_only)
 		cnt = 1;
+	else
+		cnt = remove_duplicate_parents(commit);
 
 	/*
 	 * It is possible that we are a merge and one side branch
@@ -2221,10 +2224,58 @@ static int rewrite_parents(struct rev_info *revs, struct commit *commit)
 	return 0;
 }
 
+static int commit_rewrite_person(struct strbuf *buf, const char *what, struct string_list *mailmap)
+{
+	char *person, *endp;
+	size_t len, namelen, maillen;
+	const char *name;
+	const char *mail;
+	struct ident_split ident;
+
+	person = strstr(buf->buf, what);
+	if (!person)
+		return 0;
+
+	person += strlen(what);
+	endp = strchr(person, '\n');
+	if (!endp)
+		return 0;
+
+	len = endp - person;
+
+	if (split_ident_line(&ident, person, len))
+		return 0;
+
+	mail = ident.mail_begin;
+	maillen = ident.mail_end - ident.mail_begin;
+	name = ident.name_begin;
+	namelen = ident.name_end - ident.name_begin;
+
+	if (map_user(mailmap, &mail, &maillen, &name, &namelen)) {
+		struct strbuf namemail = STRBUF_INIT;
+
+		strbuf_addf(&namemail, "%.*s <%.*s>",
+			    (int)namelen, name, (int)maillen, mail);
+
+		strbuf_splice(buf, ident.name_begin - buf->buf,
+			      ident.mail_end - ident.name_begin + 1,
+			      namemail.buf, namemail.len);
+
+		strbuf_release(&namemail);
+
+		return 1;
+	}
+
+	return 0;
+}
+
 static int commit_match(struct commit *commit, struct rev_info *opt)
 {
 	int retval;
+	const char *encoding;
+	char *message;
 	struct strbuf buf = STRBUF_INIT;
+
 	if (!opt->grep_filter.pattern_list && !opt->grep_filter.header_list)
 		return 1;
 
@@ -2235,25 +2286,43 @@ static int commit_match(struct commit *commit, struct rev_info *opt)
 		strbuf_addch(&buf, '\n');
 	}
 
+	/*
+	 * We grep in the user's output encoding, under the assumption that it
+	 * is the encoding they are most likely to write their grep pattern
+	 * for. In addition, it means we will match the "notes" encoding below,
+	 * so we will not end up with a buffer that has two different encodings
+	 * in it.
+	 */
+	encoding = get_log_output_encoding();
+	message = logmsg_reencode(commit, NULL, encoding);
+
 	/* Copy the commit to temporary if we are using "fake" headers */
 	if (buf.len)
-		strbuf_addstr(&buf, commit->buffer);
+		strbuf_addstr(&buf, message);
+
+	if (opt->grep_filter.header_list && opt->mailmap) {
+		if (!buf.len)
+			strbuf_addstr(&buf, message);
+
+		commit_rewrite_person(&buf, "\nauthor ", opt->mailmap);
+		commit_rewrite_person(&buf, "\ncommitter ", opt->mailmap);
+	}
 
 	/* Append "fake" message parts as needed */
 	if (opt->show_notes) {
 		if (!buf.len)
-			strbuf_addstr(&buf, commit->buffer);
-		format_display_notes(commit->object.sha1, &buf,
-				     get_log_output_encoding(), 1);
+			strbuf_addstr(&buf, message);
+		format_display_notes(commit->object.sha1, &buf, encoding, 1);
 	}
 
-	/* Find either in the commit object, or in the temporary */
+	/* Find either in the original commit message, or in the temporary */
 	if (buf.len)
 		retval = grep_buffer(&opt->grep_filter, buf.buf, buf.len);
 	else
 		retval = grep_buffer(&opt->grep_filter,
-				     commit->buffer, strlen(commit->buffer));
+				     message, strlen(message));
 	strbuf_release(&buf);
+	logmsg_free(message, commit);
 	return retval;
 }
 

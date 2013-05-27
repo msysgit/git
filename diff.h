@@ -174,6 +174,9 @@ const char *diff_get_color(int diff_use_color, enum color_diff ix);
 	diff_get_color((o)->use_color, ix)
 
 
+const char *diff_line_prefix(struct diff_options *);
+
+
 extern const char mime_boundary_leader[];
 
 extern void diff_tree_setup_paths(const char **paths, struct diff_options *);
@@ -332,6 +335,8 @@ extern size_t fill_textconv(struct userdiff_driver *driver,
 extern struct userdiff_driver *get_textconv(struct diff_filespec *one);
 
 extern int parse_rename_score(const char **cp_p);
+
+extern long parse_algorithm_value(const char *value);
 
 extern int print_stat_summary(FILE *fp, int files,
 			      int insertions, int deletions);

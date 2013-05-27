@@ -837,7 +837,8 @@ static int clear_ce_flags_dir(struct cache_entry **cache, int nr,
 {
 	struct cache_entry **cache_end;
 	int dtype = DT_DIR;
-	int ret = excluded_from_list(prefix, prefix_len, basename, &dtype, el);
+	int ret = is_excluded_from_list(prefix, prefix_len,
+					basename, &dtype, el);
 
 	prefix[prefix_len++] = '/';
 
@@ -856,7 +857,7 @@ static int clear_ce_flags_dir(struct cache_entry **cache, int nr,
 	 * with ret (iow, we know in advance the incl/excl
 	 * decision for the entire directory), clear flag here without
 	 * calling clear_ce_flags_1(). That function will call
-	 * the expensive excluded_from_list() on every entry.
+	 * the expensive is_excluded_from_list() on every entry.
 	 */
 	return clear_ce_flags_1(cache, cache_end - cache,
 				prefix, prefix_len,
@@ -939,7 +940,8 @@ static int clear_ce_flags_1(struct cache_entry **cache, int nr,
 
 		/* Non-directory */
 		dtype = ce_to_dtype(ce);
-		ret = excluded_from_list(ce->name, ce_namelen(ce), name, &dtype, el);
+		ret = is_excluded_from_list(ce->name, ce_namelen(ce),
+					    name, &dtype, el);
 		if (ret < 0)
 			ret = defval;
 		if (ret > 0)
@@ -1018,16 +1020,12 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 	if (!core_apply_sparse_checkout || !o->update)
 		o->skip_sparse_checkout = 1;
 	if (!o->skip_sparse_checkout) {
-		if (add_excludes_from_file_to_list(git_path("info/sparse-checkout"), "", 0, NULL, &el, 0) < 0)
+		if (add_excludes_from_file_to_list(git_path("info/sparse-checkout"), "", 0, &el, 0) < 0)
 			o->skip_sparse_checkout = 1;
 		else
 			o->el = &el;
 	}
 
-	if (o->dir) {
-		o->path_exclude_check = xmalloc(sizeof(struct path_exclude_check));
-		path_exclude_check_init(o->path_exclude_check, o->dir);
-	}
 	memset(&o->result, 0, sizeof(o->result));
 	o->result.initialized = 1;
 	o->result.timestamp.sec = o->src_index->timestamp.sec;
@@ -1152,11 +1150,7 @@ int unpack_trees(unsigned len, struct tree_desc *t, struct unpack_trees_options 
 		*o->dst_index = o->result;
 
 done:
-	free_excludes(&el);
-	if (o->path_exclude_check) {
-		path_exclude_check_clear(o->path_exclude_check);
-		free(o->path_exclude_check);
-	}
+	clear_exclude_list(&el);
 	return ret;
 
 return_failed:
@@ -1373,7 +1367,7 @@ static int check_ok_to_remove(const char *name, int len, int dtype,
 		return 0;
 
 	if (o->dir &&
-	    path_excluded(o->path_exclude_check, name, -1, &dtype))
+	    is_excluded(o->dir, name, &dtype))
 		/*
 		 * ce->name is explicitly excluded, so it is Ok to
 		 * overwrite it.
@@ -1834,7 +1828,7 @@ int oneway_merge(struct cache_entry **src, struct unpack_trees_options *o)
 
 	if (old && same(old, a)) {
 		int update = 0;
-		if (o->reset && !ce_uptodate(old) && !ce_skip_worktree(old)) {
+		if (o->reset && o->update && !ce_uptodate(old) && !ce_skip_worktree(old)) {
 			struct stat st;
 			if (lstat(old->name, &st) ||
 			    ie_match_stat(o->src_index, old, &st, CE_MATCH_IGNORE_VALID|CE_MATCH_IGNORE_SKIP_WORKTREE))

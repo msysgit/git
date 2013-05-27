@@ -110,6 +110,8 @@ extern void strbuf_remove(struct strbuf *, size_t pos, size_t len);
 extern void strbuf_splice(struct strbuf *, size_t pos, size_t len,
                           const void *, size_t);
 
+extern void strbuf_add_commented_lines(struct strbuf *out, const char *buf, size_t size);
+
 extern void strbuf_add(struct strbuf *, const void *, size_t);
 static inline void strbuf_addstr(struct strbuf *sb, const char *s) {
 	strbuf_add(sb, s, strlen(s));
@@ -131,10 +133,18 @@ extern void strbuf_addbuf_percentquote(struct strbuf *dst, const struct strbuf *
 
 __attribute__((format (printf,2,3)))
 extern void strbuf_addf(struct strbuf *sb, const char *fmt, ...);
+__attribute__((format (printf, 2, 3)))
+extern void strbuf_commented_addf(struct strbuf *sb, const char *fmt, ...);
 __attribute__((format (printf,2,0)))
 extern void strbuf_vaddf(struct strbuf *sb, const char *fmt, va_list ap);
 
 extern void strbuf_add_lines(struct strbuf *sb, const char *prefix, const char *buf, size_t size);
+
+/*
+ * Append s to sb, with the characters '<', '>', '&' and '"' converted
+ * into XML entities.
+ */
+extern void strbuf_addstr_xml_quoted(struct strbuf *sb, const char *s);
 
 static inline void strbuf_complete_line(struct strbuf *sb)
 {
@@ -160,6 +170,7 @@ extern int strbuf_check_branch_ref(struct strbuf *sb, const char *name);
 
 extern void strbuf_addstr_urlencode(struct strbuf *, const char *,
 				    int reserved);
+extern void strbuf_humanise_bytes(struct strbuf *buf, off_t bytes);
 
 __attribute__((format (printf,1,2)))
 extern int printf_ln(const char *fmt, ...);

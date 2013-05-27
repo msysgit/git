@@ -336,7 +336,7 @@ split_patches () {
 			# Since we cannot guarantee that the commit message is in
 			# git-friendly format, we put no Subject: line and just consume
 			# all of the message as the body
-			perl -M'POSIX qw(strftime)' -ne 'BEGIN { $subject = 0 }
+			LANG=C LC_ALL=C perl -M'POSIX qw(strftime)' -ne 'BEGIN { $subject = 0 }
 				if ($subject) { print ; }
 				elsif (/^\# User /) { s/\# User/From:/ ; print ; }
 				elsif (/^\# Date /) {
@@ -667,7 +667,7 @@ do
 			sed -e '1,/^$/d' >"$dotest/msg-clean"
 			echo "$commit" >"$dotest/original-commit"
 			get_author_ident_from_commit "$commit" >"$dotest/author-script"
-			git diff-tree --root --binary "$commit" >"$dotest/patch"
+			git diff-tree --root --binary --full-index "$commit" >"$dotest/patch"
 		else
 			git mailinfo $keep $no_inbody_headers $scissors $utf8 "$dotest/msg" "$dotest/patch" \
 				<"$dotest/$msgnum" >"$dotest/info" ||
@@ -782,13 +782,6 @@ To restore the original branch and stop patching run \"\$cmdline --abort\"."
 	    action=yes
 	fi
 
-	if test -f "$dotest/final-commit"
-	then
-		FIRSTLINE=$(sed 1q "$dotest/final-commit")
-	else
-		FIRSTLINE=""
-	fi
-
 	if test $action = skip
 	then
 		go_next
@@ -799,6 +792,13 @@ To restore the original branch and stop patching run \"\$cmdline --abort\"."
 	then
 		"$GIT_DIR"/hooks/applypatch-msg "$dotest/final-commit" ||
 		stop_here $this
+	fi
+
+	if test -f "$dotest/final-commit"
+	then
+		FIRSTLINE=$(sed 1q "$dotest/final-commit")
+	else
+		FIRSTLINE=""
 	fi
 
 	say "$(eval_gettext "Applying: \$FIRSTLINE")"

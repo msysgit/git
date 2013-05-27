@@ -76,8 +76,7 @@ The 'git fmt-merge-msg' command can be
 used to give a good default for automated 'git merge'
 invocations.
 
---rerere-autoupdate::
---no-rerere-autoupdate::
+--[no-]rerere-autoupdate::
 	Allow the rerere mechanism to update the index with the
 	result of auto-conflict resolution if possible.
 
@@ -170,6 +169,30 @@ happens:
 If you tried a merge which resulted in complex conflicts and
 want to start over, you can recover with `git merge --abort`.
 
+MERGING TAG
+-----------
+
+When merging an annotated (and possibly signed) tag, Git always
+creates a merge commit even if a fast-forward merge is possible, and
+the commit message template is prepared with the tag message.
+Additionally, if the tag is signed, the signature check is reported
+as a comment in the message template. See also linkgit:git-tag[1].
+
+When you want to just integrate with the work leading to the commit
+that happens to be tagged, e.g. synchronizing with an upstream
+release point, you may not want to make an unnecessary merge commit.
+
+In such a case, you can "unwrap" the tag yourself before feeding it
+to `git merge`, or pass `--ff-only` when you do not have any work on
+your own. e.g.
+
+---
+git fetch origin
+git merge v1.2.3^0
+git merge --ff-only v1.2.3
+---
+
+
 HOW CONFLICTS ARE PRESENTED
 ---------------------------
 
@@ -178,10 +201,10 @@ of the merge.  Among the changes made to the common ancestor's version,
 non-overlapping ones (that is, you changed an area of the file while the
 other side left that area intact, or vice versa) are incorporated in the
 final result verbatim.  When both sides made changes to the same area,
-however, git cannot randomly pick one side over the other, and asks you to
+however, Git cannot randomly pick one side over the other, and asks you to
 resolve it by leaving what both sides did to that area.
 
-By default, git uses the same style as the one used by the "merge" program
+By default, Git uses the same style as the one used by the "merge" program
 from the RCS suite to present such a conflicted hunk, like this:
 
 ------------

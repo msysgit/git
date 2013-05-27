@@ -86,14 +86,14 @@ if test -n "$OPTIONS_SPEC"; then
 else
 	dashless=$(basename "$0" | sed -e 's/-/ /')
 	usage() {
-		die "Usage: $dashless $USAGE"
+		die "usage: $dashless $USAGE"
 	}
 
 	if [ -z "$LONG_USAGE" ]
 	then
-		LONG_USAGE="Usage: $dashless $USAGE"
+		LONG_USAGE="usage: $dashless $USAGE"
 	else
-		LONG_USAGE="Usage: $dashless $USAGE
+		LONG_USAGE="usage: $dashless $USAGE
 
 $LONG_USAGE"
 	fi
@@ -249,6 +249,18 @@ get_author_ident_from_commit () {
 # list in git_connect()
 clear_local_git_env() {
 	unset $(git rev-parse --local-env-vars)
+}
+
+# Generate a virtual base file for a two-file merge. Uses git apply to
+# remove lines from $1 that are not in $2, leaving only common lines.
+create_virtual_base() {
+	sz0=$(wc -c <"$1")
+	@@DIFF@@ -u -La/"$1" -Lb/"$1" "$1" "$2" | git apply --no-add
+	sz1=$(wc -c <"$1")
+
+	# If we do not have enough common material, it is not
+	# worth trying two-file merge using common subsections.
+	expr $sz0 \< $sz1 \* 2 >/dev/null || : >"$1"
 }
 
 

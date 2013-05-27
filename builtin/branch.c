@@ -18,6 +18,7 @@
 #include "string-list.h"
 #include "column.h"
 #include "utf8.h"
+#include "wt-status.h"
 
 static const char * const builtin_branch_usage[] = {
 	N_("git branch [options] [-r | -a] [--merged | --no-merged]"),
@@ -40,13 +41,15 @@ static char branch_colors[][COLOR_MAXLEN] = {
 	GIT_COLOR_RED,		/* REMOTE */
 	GIT_COLOR_NORMAL,	/* LOCAL */
 	GIT_COLOR_GREEN,	/* CURRENT */
+	GIT_COLOR_BLUE,		/* UPSTREAM */
 };
 enum color_branch {
 	BRANCH_COLOR_RESET = 0,
 	BRANCH_COLOR_PLAIN = 1,
 	BRANCH_COLOR_REMOTE = 2,
 	BRANCH_COLOR_LOCAL = 3,
-	BRANCH_COLOR_CURRENT = 4
+	BRANCH_COLOR_CURRENT = 4,
+	BRANCH_COLOR_UPSTREAM = 5
 };
 
 static enum merge_filter {
@@ -71,6 +74,8 @@ static int parse_branch_color_slot(const char *var, int ofs)
 		return BRANCH_COLOR_LOCAL;
 	if (!strcasecmp(var+ofs, "current"))
 		return BRANCH_COLOR_CURRENT;
+	if (!strcasecmp(var+ofs, "upstream"))
+		return BRANCH_COLOR_UPSTREAM;
 	return -1;
 }
 
@@ -417,36 +422,52 @@ static void fill_tracking_info(struct strbuf *stat, const char *branch_name,
 	int ours, theirs;
 	char *ref = NULL;
 	struct branch *branch = branch_get(branch_name);
+	struct strbuf fancy = STRBUF_INIT;
 
 	if (!stat_tracking_info(branch, &ours, &theirs)) {
 		if (branch && branch->merge && branch->merge[0]->dst &&
-		    show_upstream_ref)
-			strbuf_addf(stat, "[%s] ",
-			    shorten_unambiguous_ref(branch->merge[0]->dst, 0));
+		    show_upstream_ref) {
+			ref = shorten_unambiguous_ref(branch->merge[0]->dst, 0);
+			if (want_color(branch_use_color))
+				strbuf_addf(stat, "[%s%s%s] ",
+						branch_get_color(BRANCH_COLOR_UPSTREAM),
+						ref, branch_get_color(BRANCH_COLOR_RESET));
+			else
+				strbuf_addf(stat, "[%s] ", ref);
+		}
 		return;
 	}
 
-	if (show_upstream_ref)
+	if (show_upstream_ref) {
 		ref = shorten_unambiguous_ref(branch->merge[0]->dst, 0);
+		if (want_color(branch_use_color))
+			strbuf_addf(&fancy, "%s%s%s",
+					branch_get_color(BRANCH_COLOR_UPSTREAM),
+					ref, branch_get_color(BRANCH_COLOR_RESET));
+		else
+			strbuf_addstr(&fancy, ref);
+	}
+
 	if (!ours) {
 		if (ref)
-			strbuf_addf(stat, _("[%s: behind %d]"), ref, theirs);
+			strbuf_addf(stat, _("[%s: behind %d]"), fancy.buf, theirs);
 		else
 			strbuf_addf(stat, _("[behind %d]"), theirs);
 
 	} else if (!theirs) {
 		if (ref)
-			strbuf_addf(stat, _("[%s: ahead %d]"), ref, ours);
+			strbuf_addf(stat, _("[%s: ahead %d]"), fancy.buf, ours);
 		else
 			strbuf_addf(stat, _("[ahead %d]"), ours);
 	} else {
 		if (ref)
 			strbuf_addf(stat, _("[%s: ahead %d, behind %d]"),
-				    ref, ours, theirs);
+				    fancy.buf, ours, theirs);
 		else
 			strbuf_addf(stat, _("[ahead %d, behind %d]"),
 				    ours, theirs);
 	}
+	strbuf_release(&fancy);
 	strbuf_addch(stat, ' ');
 	free(ref);
 }
@@ -466,7 +487,7 @@ static void add_verbose_info(struct strbuf *out, struct ref_item *item,
 			     int verbose, int abbrev)
 {
 	struct strbuf subject = STRBUF_INIT, stat = STRBUF_INIT;
-	const char *sub = " **** invalid ref ****";
+	const char *sub = _(" **** invalid ref ****");
 	struct commit *commit = item->commit;
 
 	if (commit && !parse_commit(commit)) {
@@ -550,6 +571,29 @@ static int calc_maxwidth(struct ref_list *refs)
 	return w;
 }
 
+static char *get_head_description(void)
+{
+	struct strbuf desc = STRBUF_INIT;
+	struct wt_status_state state;
+	memset(&state, 0, sizeof(state));
+	wt_status_get_state(&state, 1);
+	if (state.rebase_in_progress ||
+	    state.rebase_interactive_in_progress)
+		strbuf_addf(&desc, _("(no branch, rebasing %s)"),
+			    state.branch);
+	else if (state.bisect_in_progress)
+		strbuf_addf(&desc, _("(no branch, bisect started on %s)"),
+			    state.branch);
+	else if (state.detached_from)
+		strbuf_addf(&desc, _("(detached from %s)"),
+			    state.detached_from);
+	else
+		strbuf_addstr(&desc, _("(no branch)"));
+	free(state.branch);
+	free(state.onto);
+	free(state.detached_from);
+	return strbuf_detach(&desc, NULL);
+}
 
 static void show_detached(struct ref_list *ref_list)
 {
@@ -557,7 +601,7 @@ static void show_detached(struct ref_list *ref_list)
 
 	if (head_commit && is_descendant_of(head_commit, ref_list->with_commit)) {
 		struct ref_item item;
-		item.name = xstrdup(_("(no branch)"));
+		item.name = get_head_description();
 		item.width = utf8_strwidth(item.name);
 		item.kind = REF_LOCAL_BRANCH;
 		item.dest = NULL;
@@ -590,7 +634,7 @@ static int print_ref_list(int kinds, int detached, int verbose, int abbrev, stru
 		struct commit *filter;
 		filter = lookup_commit_reference_gently(merge_filter_ref, 0);
 		if (!filter)
-			die("object '%s' does not point to a commit",
+			die(_("object '%s' does not point to a commit"),
 			    sha1_to_hex(merge_filter_ref));
 
 		filter->object.flags |= UNINTERESTING;
@@ -706,11 +750,11 @@ static int edit_branch_description(const char *branch_name)
 	read_branch_desc(&buf, branch_name);
 	if (!buf.len || buf.buf[buf.len-1] != '\n')
 		strbuf_addch(&buf, '\n');
-	strbuf_addf(&buf,
-		    "# Please edit the description for the branch\n"
-		    "#   %s\n"
-		    "# Lines starting with '#' will be stripped.\n",
-		    branch_name);
+	strbuf_commented_addf(&buf,
+		    "Please edit the description for the branch\n"
+		    "  %s\n"
+		    "Lines starting with '%c' will be stripped.\n",
+		    branch_name, comment_line_char);
 	fp = fopen(git_path(edit_description), "w");
 	if ((fwrite(buf.buf, 1, buf.len, fp) < buf.len) || fclose(fp)) {
 		strbuf_release(&buf);
@@ -725,7 +769,7 @@ static int edit_branch_description(const char *branch_name)
 	stripspace(&buf, 1);
 
 	strbuf_addf(&name, "branch.%s.description", branch_name);
-	status = git_config_set(name.buf, buf.buf);
+	status = git_config_set(name.buf, buf.len ? buf.buf : NULL);
 	strbuf_release(&name);
 	strbuf_release(&buf);
 
@@ -825,6 +869,9 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 	if (!delete && !rename && !edit_description && !new_upstream && !unset_upstream && argc == 0)
 		list = 1;
 
+	if (with_commit || merge_filter != NO_FILTER)
+		list = 1;
+
 	if (!!delete + !!rename + !!force_create + !!list + !!new_upstream + !!unset_upstream > 1)
 		usage_with_options(builtin_branch_usage, options);
 
@@ -837,9 +884,11 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 		colopts = 0;
 	}
 
-	if (delete)
+	if (delete) {
+		if (!argc)
+			die(_("branch name required"));
 		return delete_branches(argc, argv, delete > 1, kinds, quiet);
-	else if (list) {
+	} else if (list) {
 		int ret = print_ref_list(kinds, detached, verbose, abbrev,
 					 with_commit, argv);
 		print_columns(&output, colopts, NULL);
@@ -850,38 +899,52 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 		const char *branch_name;
 		struct strbuf branch_ref = STRBUF_INIT;
 
-		if (detached)
-			die("Cannot give description to detached HEAD");
-		if (!argc)
+		if (!argc) {
+			if (detached)
+				die(_("Cannot give description to detached HEAD"));
 			branch_name = head;
-		else if (argc == 1)
+		} else if (argc == 1)
 			branch_name = argv[0];
 		else
-			usage_with_options(builtin_branch_usage, options);
+			die(_("cannot edit description of more than one branch"));
 
 		strbuf_addf(&branch_ref, "refs/heads/%s", branch_name);
 		if (!ref_exists(branch_ref.buf)) {
 			strbuf_release(&branch_ref);
 
 			if (!argc)
-				return error("No commit on branch '%s' yet.",
+				return error(_("No commit on branch '%s' yet."),
 					     branch_name);
 			else
-				return error("No such branch '%s'.", branch_name);
+				return error(_("No branch named '%s'."),
+					     branch_name);
 		}
 		strbuf_release(&branch_ref);
 
 		if (edit_branch_description(branch_name))
 			return 1;
 	} else if (rename) {
-		if (argc == 1)
+		if (!argc)
+			die(_("branch name required"));
+		else if (argc == 1)
 			rename_branch(head, argv[0], rename > 1);
 		else if (argc == 2)
 			rename_branch(argv[0], argv[1], rename > 1);
 		else
-			usage_with_options(builtin_branch_usage, options);
+			die(_("too many branches for a rename operation"));
 	} else if (new_upstream) {
 		struct branch *branch = branch_get(argv[0]);
+
+		if (argc > 1)
+			die(_("too many branches to set new upstream"));
+
+		if (!branch) {
+			if (!argc || !strcmp(argv[0], "HEAD"))
+				die(_("could not set upstream of HEAD to %s when "
+				      "it does not point to any branch."),
+				    new_upstream);
+			die(_("no such branch '%s'"), argv[0]);
+		}
 
 		if (!ref_exists(branch->refname))
 			die(_("branch '%s' does not exist"), branch->name);
@@ -894,6 +957,16 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 	} else if (unset_upstream) {
 		struct branch *branch = branch_get(argv[0]);
 		struct strbuf buf = STRBUF_INIT;
+
+		if (argc > 1)
+			die(_("too many branches to unset upstream"));
+
+		if (!branch) {
+			if (!argc || !strcmp(argv[0], "HEAD"))
+				die(_("could not unset upstream of HEAD when "
+				      "it does not point to any branch."));
+			die(_("no such branch '%s'"), argv[0]);
+		}
 
 		if (!branch_has_merge_config(branch)) {
 			die(_("Branch '%s' has no upstream information"), branch->name);
@@ -909,6 +982,12 @@ int cmd_branch(int argc, const char **argv, const char *prefix)
 		struct branch *branch = branch_get(argv[0]);
 		int branch_existed = 0, remote_tracking = 0;
 		struct strbuf buf = STRBUF_INIT;
+
+		if (!strcmp(argv[0], "HEAD"))
+			die(_("it does not make sense to create 'HEAD' manually"));
+
+		if (!branch)
+			die(_("no such branch '%s'"), argv[0]);
 
 		if (kinds != REF_LOCAL_BRANCH)
 			die(_("-a and -r options to 'git branch' do not make sense with a branch name"));

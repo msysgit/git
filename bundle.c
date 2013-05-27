@@ -57,7 +57,7 @@ static int parse_bundle_header(int fd, struct bundle_header *header,
 		 * followed by SP and subject line.
 		 */
 		if (get_sha1_hex(buf.buf, sha1) ||
-		    (40 <= buf.len && !isspace(buf.buf[40])) ||
+		    (buf.len > 40 && !isspace(buf.buf[40])) ||
 		    (!is_prereq && buf.len <= 40)) {
 			if (report_path)
 				error(_("unrecognized header: %s%s (%d)"),
@@ -183,17 +183,17 @@ int verify_bundle(struct bundle_header *header, int verbose)
 		struct ref_list *r;
 
 		r = &header->references;
-		printf_ln(Q_("The bundle contains %d ref",
-			     "The bundle contains %d refs",
+		printf_ln(Q_("The bundle contains this ref:",
+			     "The bundle contains these %d refs:",
 			     r->nr),
 			  r->nr);
 		list_refs(r, 0, NULL);
+		r = &header->prerequisites;
 		if (!r->nr) {
 			printf_ln(_("The bundle records a complete history."));
 		} else {
-			r = &header->prerequisites;
-			printf_ln(Q_("The bundle requires this ref",
-				     "The bundle requires these %d refs",
+			printf_ln(Q_("The bundle requires this ref:",
+				     "The bundle requires these %d refs:",
 				     r->nr),
 				  r->nr);
 			list_refs(r, 0, NULL);
@@ -279,12 +279,12 @@ int create_bundle(struct bundle_header *header, const char *path,
 		if (buf.len > 0 && buf.buf[0] == '-') {
 			write_or_die(bundle_fd, buf.buf, buf.len);
 			if (!get_sha1_hex(buf.buf + 1, sha1)) {
-				struct object *object = parse_object(sha1);
+				struct object *object = parse_object_or_die(sha1, buf.buf);
 				object->flags |= UNINTERESTING;
 				add_pending_object(&revs, object, xstrdup(buf.buf));
 			}
 		} else if (!get_sha1_hex(buf.buf, sha1)) {
-			struct object *object = parse_object(sha1);
+			struct object *object = parse_object_or_die(sha1, buf.buf);
 			object->flags |= SHOWN;
 		}
 	}
@@ -361,7 +361,7 @@ int create_bundle(struct bundle_header *header, const char *path,
 				 * end up triggering "empty bundle"
 				 * error.
 				 */
-				obj = parse_object(sha1);
+				obj = parse_object_or_die(sha1, e->name);
 				obj->flags |= SHOWN;
 				add_pending_object(&revs, obj, e->name);
 			}

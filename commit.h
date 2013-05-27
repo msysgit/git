@@ -5,6 +5,7 @@
 #include "tree.h"
 #include "strbuf.h"
 #include "decorate.h"
+#include "gpg-interface.h"
 
 struct commit_list {
 	struct commit *item;
@@ -89,6 +90,8 @@ struct pretty_print_context {
 	char *notes_message;
 	struct reflog_walk_info *reflog_info;
 	const char *output_encoding;
+	struct string_list *mailmap;
+	int color;
 };
 
 struct userformat_want {
@@ -98,7 +101,9 @@ struct userformat_want {
 extern int has_non_ascii(const char *text);
 struct rev_info; /* in revision.h, it circularly uses enum cmit_fmt */
 extern char *logmsg_reencode(const struct commit *commit,
+			     char **commit_encoding,
 			     const char *output_encoding);
+extern void logmsg_free(char *msg, const struct commit *commit);
 extern void get_commit_format(const char *arg, struct rev_info *);
 extern const char *format_subject(struct strbuf *sb, const char *msg,
 				  const char *line_separator);
@@ -134,6 +139,7 @@ struct commit *pop_most_recent_commit(struct commit_list **list,
 struct commit *pop_commit(struct commit_list **stack);
 
 void clear_commit_marks(struct commit *commit, unsigned int mark);
+void clear_commit_marks_many(int nr, struct commit **commit, unsigned int mark);
 void clear_commit_marks_for_object_array(struct object_array *a, unsigned mark);
 
 /*
@@ -161,6 +167,9 @@ extern struct commit_list *get_merge_bases(struct commit *rev1, struct commit *r
 extern struct commit_list *get_merge_bases_many(struct commit *one, int n, struct commit **twos, int cleanup);
 extern struct commit_list *get_octopus_merge_bases(struct commit_list *in);
 
+/* largest positive number a signed 32-bit integer can contain */
+#define INFINITE_DEPTH 0x7fffffff
+
 extern int register_shallow(const unsigned char *sha1);
 extern int unregister_shallow(const unsigned char *sha1);
 extern int for_each_commit_graft(each_commit_graft_fn, void *);
@@ -170,6 +179,7 @@ extern struct commit_list *get_shallow_commits(struct object_array *heads,
 
 int is_descendant_of(struct commit *, struct commit_list *);
 int in_merge_bases(struct commit *, struct commit *);
+int in_merge_bases_many(struct commit *, int, struct commit **);
 
 extern int interactive_add(int argc, const char **argv, const char *prefix, int patch);
 extern int run_add_interactive(const char *revision, const char *patch_mode,
@@ -223,5 +233,14 @@ extern int parse_signed_commit(const unsigned char *sha1,
 extern void print_commit_list(struct commit_list *list,
 			      const char *format_cur,
 			      const char *format_last);
+
+/*
+ * Check the signature of the given commit. The result of the check is stored
+ * in sig->check_result, 'G' for a good signature, 'U' for a good signature
+ * from an untrusted signer, 'B' for a bad signature and 'N' for no signature
+ * at all.  This may allocate memory for sig->gpg_output, sig->gpg_status,
+ * sig->signer and sig->key.
+ */
+extern void check_commit_signature(const struct commit* commit, struct signature_check *sigc);
 
 #endif /* COMMIT_H */

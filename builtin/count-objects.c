@@ -9,11 +9,22 @@
 #include "builtin.h"
 #include "parse-options.h"
 
+static unsigned long garbage;
+static off_t size_garbage;
+
+static void real_report_garbage(const char *desc, const char *path)
+{
+	struct stat st;
+	if (!stat(path, &st))
+		size_garbage += st.st_size;
+	warning("%s: %s", desc, path);
+	garbage++;
+}
+
 static void count_objects(DIR *d, char *path, int len, int verbose,
 			  unsigned long *loose,
 			  off_t *loose_size,
-			  unsigned long *packed_loose,
-			  unsigned long *garbage)
+			  unsigned long *packed_loose)
 {
 	struct dirent *ent;
 	while ((ent = readdir(d)) != NULL) {
@@ -46,9 +57,11 @@ static void count_objects(DIR *d, char *path, int len, int verbose,
 		}
 		if (bad) {
 			if (verbose) {
-				error("garbage found: %.*s/%s",
-				      len + 2, path, ent->d_name);
-				(*garbage)++;
+				struct strbuf sb = STRBUF_INIT;
+				strbuf_addf(&sb, "%.*s/%s",
+					    len + 2, path, ent->d_name);
+				report_garbage("garbage found", sb.buf);
+				strbuf_release(&sb);
 			}
 			continue;
 		}
@@ -66,20 +79,22 @@ static void count_objects(DIR *d, char *path, int len, int verbose,
 }
 
 static char const * const count_objects_usage[] = {
-	N_("git count-objects [-v]"),
+	N_("git count-objects [-v] [-H | --human-readable]"),
 	NULL
 };
 
 int cmd_count_objects(int argc, const char **argv, const char *prefix)
 {
-	int i, verbose = 0;
+	int i, verbose = 0, human_readable = 0;
 	const char *objdir = get_object_directory();
 	int len = strlen(objdir);
 	char *path = xmalloc(len + 50);
-	unsigned long loose = 0, packed = 0, packed_loose = 0, garbage = 0;
+	unsigned long loose = 0, packed = 0, packed_loose = 0;
 	off_t loose_size = 0;
 	struct option opts[] = {
 		OPT__VERBOSE(&verbose, N_("be verbose")),
+		OPT_BOOL('H', "human-readable", &human_readable,
+			 N_("print sizes in human readable format")),
 		OPT_END(),
 	};
 
@@ -87,6 +102,8 @@ int cmd_count_objects(int argc, const char **argv, const char *prefix)
 	/* we do not take arguments other than flags for now */
 	if (argc)
 		usage_with_options(count_objects_usage, opts);
+	if (verbose)
+		report_garbage = real_report_garbage;
 	memcpy(path, objdir, len);
 	if (len && objdir[len-1] != '/')
 		path[len++] = '/';
@@ -97,13 +114,16 @@ int cmd_count_objects(int argc, const char **argv, const char *prefix)
 		if (!d)
 			continue;
 		count_objects(d, path, len, verbose,
-			      &loose, &loose_size, &packed_loose, &garbage);
+			      &loose, &loose_size, &packed_loose);
 		closedir(d);
 	}
 	if (verbose) {
 		struct packed_git *p;
 		unsigned long num_pack = 0;
 		off_t size_pack = 0;
+		struct strbuf loose_buf = STRBUF_INIT;
+		struct strbuf pack_buf = STRBUF_INIT;
+		struct strbuf garbage_buf = STRBUF_INIT;
 		if (!packed_git)
 			prepare_packed_git();
 		for (p = packed_git; p; p = p->next) {
@@ -115,16 +135,40 @@ int cmd_count_objects(int argc, const char **argv, const char *prefix)
 			size_pack += p->pack_size + p->index_size;
 			num_pack++;
 		}
+
+		if (human_readable) {
+			strbuf_humanise_bytes(&loose_buf, loose_size);
+			strbuf_humanise_bytes(&pack_buf, size_pack);
+			strbuf_humanise_bytes(&garbage_buf, size_garbage);
+		} else {
+			strbuf_addf(&loose_buf, "%lu",
+				    (unsigned long)(loose_size / 1024));
+			strbuf_addf(&pack_buf, "%lu",
+				    (unsigned long)(size_pack / 1024));
+			strbuf_addf(&garbage_buf, "%lu",
+				    (unsigned long)(size_garbage / 1024));
+		}
+
 		printf("count: %lu\n", loose);
-		printf("size: %lu\n", (unsigned long) (loose_size / 1024));
+		printf("size: %s\n", loose_buf.buf);
 		printf("in-pack: %lu\n", packed);
 		printf("packs: %lu\n", num_pack);
-		printf("size-pack: %lu\n", (unsigned long) (size_pack / 1024));
+		printf("size-pack: %s\n", pack_buf.buf);
 		printf("prune-packable: %lu\n", packed_loose);
 		printf("garbage: %lu\n", garbage);
+		printf("size-garbage: %s\n", garbage_buf.buf);
+		strbuf_release(&loose_buf);
+		strbuf_release(&pack_buf);
+		strbuf_release(&garbage_buf);
+	} else {
+		struct strbuf buf = STRBUF_INIT;
+		if (human_readable)
+			strbuf_humanise_bytes(&buf, loose_size);
+		else
+			strbuf_addf(&buf, "%lu kilobytes",
+				    (unsigned long)(loose_size / 1024));
+		printf("%lu objects, %s\n", loose, buf.buf);
+		strbuf_release(&buf);
 	}
-	else
-		printf("%lu objects, %lu kilobytes\n",
-		       loose, (unsigned long) (loose_size / 1024));
 	return 0;
 }

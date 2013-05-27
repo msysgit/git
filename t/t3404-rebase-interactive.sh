@@ -29,12 +29,6 @@ Initial setup:
 
 . "$TEST_DIRECTORY"/lib-rebase.sh
 
-test_cmp_rev () {
-	git rev-parse --verify "$1" >expect.rev &&
-	git rev-parse --verify "$2" >actual.rev &&
-	test_cmp expect.rev actual.rev
-}
-
 set_fake_editor
 
 # WARNING: Modifications to the initial repository can change the SHA ID used
@@ -938,6 +932,19 @@ test_expect_success 'rebase --edit-todo can be used to modify todo' '
 	git rebase --continue
 	test M = $(git cat-file commit HEAD^ | sed -ne \$p) &&
 	test L = $(git cat-file commit HEAD | sed -ne \$p)
+'
+
+test_expect_success 'rebase -i respects core.commentchar' '
+	git reset --hard &&
+	git checkout E^0 &&
+	test_config core.commentchar "\\" &&
+	write_script remove-all-but-first.sh <<-\EOF &&
+	sed -e "2,\$s/^/\\\\/" "$1" >"$1.tmp" &&
+	mv "$1.tmp" "$1"
+	EOF
+	test_set_editor "$(pwd)/remove-all-but-first.sh" &&
+	git rebase -i B &&
+	test B = $(git cat-file commit HEAD^ | sed -ne \$p)
 '
 
 test_done

@@ -49,7 +49,7 @@ static const char * const builtin_merge_usage[] = {
 static int show_diffstat = 1, shortlog_len = -1, squash;
 static int option_commit = 1, allow_fast_forward = 1;
 static int fast_forward_only, option_edit = -1;
-static int allow_trivial = 1, have_message;
+static int allow_trivial = 1, have_message, verify_signatures;
 static int overwrite_ignore = 1;
 static struct strbuf merge_msg = STRBUF_INIT;
 static struct strategy **use_strategies;
@@ -199,6 +199,8 @@ static struct option builtin_merge_options[] = {
 	OPT_BOOLEAN(0, "ff-only", &fast_forward_only,
 		N_("abort if fast-forward is not possible")),
 	OPT_RERERE_AUTOUPDATE(&allow_rerere_auto),
+	OPT_BOOL(0, "verify-signatures", &verify_signatures,
+		N_("Verify that the named commit has a valid GPG signature")),
 	OPT_CALLBACK('s', "strategy", &use_strategies, N_("strategy"),
 		N_("merge strategy to use"), option_parse_strategy),
 	OPT_CALLBACK('X', "strategy-option", &xopts, N_("option=value"),
@@ -516,6 +518,19 @@ static void merge_name(const char *remote, struct strbuf *msg)
 		strbuf_release(&line);
 		goto cleanup;
 	}
+
+	if (remote_head->util) {
+		struct merge_remote_desc *desc;
+		desc = merge_remote_util(remote_head);
+		if (desc && desc->obj && desc->obj->type == OBJ_TAG) {
+			strbuf_addf(msg, "%s\t\t%s '%s'\n",
+				    sha1_to_hex(desc->obj->sha1),
+				    typename(desc->obj->type),
+				    remote);
+			goto cleanup;
+		}
+	}
+
 	strbuf_addf(msg, "%s\t\tcommit '%s'\n",
 		sha1_to_hex(remote_head->object.sha1), remote);
 cleanup:
@@ -788,17 +803,16 @@ static const char merge_editor_comment[] =
 N_("Please enter a commit message to explain why this merge is necessary,\n"
    "especially if it merges an updated upstream into a topic branch.\n"
    "\n"
-   "Lines starting with '#' will be ignored, and an empty message aborts\n"
+   "Lines starting with '%c' will be ignored, and an empty message aborts\n"
    "the commit.\n");
 
 static void prepare_to_commit(struct commit_list *remoteheads)
 {
 	struct strbuf msg = STRBUF_INIT;
-	const char *comment = _(merge_editor_comment);
 	strbuf_addbuf(&msg, &merge_msg);
 	strbuf_addch(&msg, '\n');
 	if (0 < option_edit)
-		strbuf_add_lines(&msg, "# ", comment, strlen(comment));
+		strbuf_commented_addf(&msg, _(merge_editor_comment), comment_line_char);
 	write_merge_msg(&msg);
 	if (run_hook(get_index_file(), "prepare-commit-msg",
 		     git_path("MERGE_MSG"), "merge", NULL, NULL))
@@ -1233,6 +1247,39 @@ int cmd_merge(int argc, const char **argv, const char *prefix)
 	if (!head_commit || !argc)
 		usage_with_options(builtin_merge_usage,
 			builtin_merge_options);
+
+	if (verify_signatures) {
+		for (p = remoteheads; p; p = p->next) {
+			struct commit *commit = p->item;
+			char hex[41];
+			struct signature_check signature_check;
+			memset(&signature_check, 0, sizeof(signature_check));
+
+			check_commit_signature(commit, &signature_check);
+
+			strcpy(hex, find_unique_abbrev(commit->object.sha1, DEFAULT_ABBREV));
+			switch (signature_check.result) {
+			case 'G':
+				break;
+			case 'U':
+				die(_("Commit %s has an untrusted GPG signature, "
+				      "allegedly by %s."), hex, signature_check.signer);
+			case 'B':
+				die(_("Commit %s has a bad GPG signature "
+				      "allegedly by %s."), hex, signature_check.signer);
+			default: /* 'N' */
+				die(_("Commit %s does not have a GPG signature."), hex);
+			}
+			if (verbosity >= 0 && signature_check.result == 'G')
+				printf(_("Commit %s has a good GPG signature by %s\n"),
+				       hex, signature_check.signer);
+
+			free(signature_check.gpg_output);
+			free(signature_check.gpg_status);
+			free(signature_check.signer);
+			free(signature_check.key);
+		}
+	}
 
 	strbuf_addstr(&buf, "merge");
 	for (p = remoteheads; p; p = p->next)

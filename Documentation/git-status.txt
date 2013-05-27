@@ -16,7 +16,7 @@ DESCRIPTION
 Displays paths that have differences between the index file and the
 current HEAD commit, paths that have differences between the working
 tree and the index file, and paths in the working tree that are not
-tracked by git (and are not ignored by linkgit:gitignore[5]). The first
+tracked by Git (and are not ignored by linkgit:gitignore[5]). The first
 are what you _would_ commit by running `git commit`; the second and
 third are what you _could_ commit by running 'git add' before running
 `git commit`.
@@ -35,7 +35,7 @@ OPTIONS
 --porcelain::
 	Give the output in an easy-to-parse format for scripts.
 	This is similar to the short output, but will remain stable
-	across git versions and regardless of user configuration. See
+	across Git versions and regardless of user configuration. See
 	below for details.
 
 --long::
@@ -46,14 +46,20 @@ OPTIONS
 	Show untracked files.
 +
 The mode parameter is optional (defaults to 'all'), and is used to
-specify the handling of untracked files; when -u is not used, the
-default is 'normal', i.e. show untracked files and directories.
+specify the handling of untracked files.
 +
 The possible options are:
 +
-	- 'no'     - Show no untracked files
-	- 'normal' - Shows untracked files and directories
+	- 'no'     - Show no untracked files.
+	- 'normal' - Shows untracked files and directories.
 	- 'all'    - Also shows individual files in untracked directories.
++
+When `-u` option is not used, untracked files and directories are
+shown (i.e. the same as specifying `normal`), to help you avoid
+forgetting to add newly created files.  Because it takes extra work
+to find untracked files in the filesystem, this mode may take some
+time in a large working tree.  You can use `no` to have `git status`
+return more quickly without showing untracked files.
 +
 The default can be changed using the status.showUntrackedFiles
 configuration variable documented in linkgit:git-config[1].
@@ -96,7 +102,7 @@ The default, long format, is designed to be human readable,
 verbose and descriptive.  Its contents and format are subject to change
 at any time.
 
-The paths mentioned in the output, unlike many other git commands, are
+The paths mentioned in the output, unlike many other Git commands, are
 made relative to the current directory if you are working in a
 subdirectory (this is on purpose, to help cutting and pasting). See
 the status.relativePaths config option below.
@@ -168,7 +174,7 @@ Porcelain Format
 ~~~~~~~~~~~~~~~~
 
 The porcelain format is similar to the short format, but is guaranteed
-not to change in a backwards-incompatible way between git versions or
+not to change in a backwards-incompatible way between Git versions or
 based on user configuration. This makes it ideal for parsing by scripts.
 The description of the short format above also describes the porcelain
 format, with a few exceptions:

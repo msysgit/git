@@ -33,7 +33,7 @@ in the tag message.
 If `-m <msg>` or `-F <file>` is given and `-a`, `-s`, and `-u <key-id>`
 are absent, `-a` is implied.
 
-Otherwise just a tag reference for the SHA1 object name of the commit object is
+Otherwise just a tag reference for the SHA-1 object name of the commit object is
 created (i.e. a lightweight tag).
 
 A GnuPG signed tag object will be created when `-s` or `-u
@@ -125,6 +125,12 @@ This option is only applicable when listing tags without annotation lines.
 	The new tag name must pass all checks defined by
 	linkgit:git-check-ref-format[1].  Some of these checks
 	may restrict the characters allowed in a tag name.
+
+<commit>::
+<object>::
+	The object that the new tag will refer to, usually a commit.
+	Defaults to HEAD.
+
 
 CONFIGURATION
 -------------
@@ -242,7 +248,7 @@ $ git pull git://git..../proj.git master
 In such a case, you do not want to automatically follow the other
 person's tags.
 
-One important aspect of git is its distributed nature, which
+One important aspect of Git is its distributed nature, which
 largely means there is no inherent "upstream" or
 "downstream" in the system.  On the face of it, the above
 example might seem to indicate that the tag namespace is owned
