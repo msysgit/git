@@ -150,6 +150,10 @@ int credential_read(struct credential *c, FILE *fp)
 		if (!line.len)
 			break;
 
+		/* strip trailing CR  */
+		if (line.buf[line.len - 1] == '\r')
+			line.buf[line.len - 1] = '\0';
+
 		if (!value) {
 			warning("invalid credential line: %s", key);
 			strbuf_release(&line);
