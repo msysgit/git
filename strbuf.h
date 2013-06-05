@@ -160,6 +160,8 @@ extern int strbuf_readlink(struct strbuf *sb, const char *path, size_t hint);
 
 extern int strbuf_getwholeline(struct strbuf *, FILE *, int);
 extern int strbuf_getline(struct strbuf *, FILE *, int);
+/* Read line with Unix endind (lf) or Windows ending (crlf) */
+extern int strbuf_getline_with_any_ending(struct strbuf *, FILE *);
 extern int strbuf_getwholeline_fd(struct strbuf *, int, int);
 
 extern void stripspace(struct strbuf *buf, int skip_comments);
