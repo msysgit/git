@@ -141,10 +141,20 @@ int safe_create_leading_directories(char *path)
 	return 0;
 }
 
+static char *backward_to_forward_slash(char *path)
+{
+	char *ptr;
+	for (ptr = path; *ptr; ptr++) {
+		if (*ptr == '\\')
+			*ptr = '/';
+	}
+	return path;
+}
+
 int safe_create_leading_directories_const(const char *path)
 {
 	/* path points to cache entries, so xstrdup before messing with it */
-	char *buf = xstrdup(path);
+	char *buf = backward_to_forward_slash(xstrdup(path));
 	int result = safe_create_leading_directories(buf);
 	free(buf);
 	return result;
