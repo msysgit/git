@@ -1,6 +1,9 @@
 #ifndef DIRENT_H
 #define DIRENT_H
 
+#undef MAX_PATH
+#define MAX_PATH 4096
+
 typedef struct DIR DIR;
 
 #define DT_UNKNOWN 0
