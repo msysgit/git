@@ -13,11 +13,7 @@ static const int delay[] = { 0, 1, 10, 20, 40 };
 unsigned int _CRT_fmode = _O_BINARY;
 
 static wchar_t * deprefix(wchar_t *path) {
-	if ( path
-		&& path[0] == L'\\'
-		&& path[1] == L'\\'
-		&& path[2] == L'?'
-		&& path[3] == L'\\' )
+	if ( path && wcsncmp(path, L"\\\\?\\", 4) == 0 )
 		return path + 4;
 	return path;
 }
@@ -351,14 +347,10 @@ int mingw_open (const char *filename, int oflags, ...)
 	va_end(args);
 
 	if (filename && !strcmp(filename, "/dev/null")) {
-		wfilename[0] = L'n';
-		wfilename[1] = L'u';
-		wfilename[2] = L'l';
-		wfilename[3] = 0;
-	}
-	else
-	if (xutftowcs_path(wfilename, filename) < 0)
+		wcscpy(wfilename, L"nul\0");
+	} else if (xutftowcs_path(wfilename, filename) < 0) {
 		return -1;
+	}
 	fd = _wopen(wfilename, oflags, mode);
 
 	if (fd < 0 && (oflags & O_CREAT) && errno == EACCES) {
@@ -431,14 +423,9 @@ FILE *mingw_fopen (const char *filename, const char *otype)
 	if (hide_dotfiles == HIDE_DOTFILES_TRUE &&
 	    basename((char*)filename)[0] == '.')
 		hide = access(filename, F_OK);
-	if (filename && !strcmp(filename, "/dev/null")) {
-		wfilename[0] = L'n';
-		wfilename[1] = L'u';
-		wfilename[2] = L'l';
-		wfilename[3] = 0;
-	}
-	else
-	if (xutftowcs_path(wfilename, filename) < 0) {
+	if (filename && !strcmp(filename, "/dev/null"))  {
+		wcscpy(wfilename, L"nul\0");
+	} else if (xutftowcs_path(wfilename, filename) < 0) {
 		return NULL;
 	}
 
@@ -459,14 +446,9 @@ FILE *mingw_freopen (const char *filename, const char *otype, FILE *stream)
 	if (hide_dotfiles == HIDE_DOTFILES_TRUE &&
 	    basename((char*)filename)[0] == '.')
 		hide = access(filename, F_OK);
-	if (filename && !strcmp(filename, "/dev/null")) {
-		wfilename[0] = L'n';
-		wfilename[1] = L'u';
-		wfilename[2] = L'l';
-		wfilename[3] = 0;
-	}
-	else
-	if (xutftowcs_path(wfilename, filename) < 0) {
+	if (filename && !strcmp(filename, "/dev/null"))  {
+		wcscpy(wfilename, L"nul\0");
+	} else if (xutftowcs_path(wfilename, filename) < 0) {
 		return NULL;
 	}
 
@@ -751,7 +733,7 @@ char *mingw_mktemp(char *template)
 		return NULL;
 	if (xwcstoutf(template_abspath, deprefix(wtemplate), sizeof(template_abspath)) < 0)
 		return NULL;
-	//copy only the base name name back to the template
+	/* copy only the base name name back to the template */
 	int idxt = strlen(template);
 	int idxtabs = strlen(template_abspath);
 	int len = strlen(basename(template));

@@ -410,12 +410,8 @@ static inline int xutftowcs_path(wchar_t *wcs, const char *utf)
 	wchar_t buf[PATH_MAX - 4];
 
 	if (!strcmp(utf, "nul")) {
-		// don't prefix reserved file name 'nul'
+		/* don't prefix reserved file name 'nul' */
 		memcpy(wcs, &(L"nul\0"), sizeof(buf));
-		//(wcs)[0] = L'n';
-		//(*wcs)[1] = L'u';
-		//(*wcs)[2] = L'l';
-		//(*wcs)[3] = 0;
 		return 3;
 	}
 
@@ -431,10 +427,7 @@ static inline int xutftowcs_path(wchar_t *wcs, const char *utf)
 		return result;
 	}
 
-	wcs[0] = L'\\';
-	wcs[1] = L'\\';
-	wcs[2] = L'?';
-	wcs[3] = L'\\';
+	wcscpy(wcs, L"\\\\?\\");
 	memcpy(wcs + 4, buf, sizeof(buf));
 	return result + 4;
 }
