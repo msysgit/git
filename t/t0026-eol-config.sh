@@ -108,7 +108,7 @@ test_expect_success NATIVE_EOL_IS_CRLF 'eol native is crlf' '
 	git commit -m "first" &&
 	rm file*.txt &&
 	git reset --hard HEAD &&
-	has_cr filedos.txt && has_cr fileunix.txt
+	! has_cr filedos.txt && ! has_cr fileunix.txt
 	)
 '
 
