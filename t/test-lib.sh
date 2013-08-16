@@ -679,6 +679,7 @@ case $(uname -s) in
 	# exec does not inherit the PID
 	test_set_prereq MINGW
 	test_set_prereq NOT_CYGWIN
+	test_set_prereq NATIVE_CRLF
 	test_set_prereq SED_STRIPS_CR
 	;;
 *CYGWIN*)
