@@ -1262,6 +1262,7 @@ int cmd_status(int argc, const char **argv, const char *prefix)
 	if (*argv)
 		s.pathspec = get_pathspec(prefix, argv);
 
+	enable_fscache(1);
 	read_cache_preload(s.pathspec);
 	refresh_index(&the_index, REFRESH_QUIET|REFRESH_UNMERGED, s.pathspec, NULL, NULL);
 
