@@ -1,5 +1,7 @@
 #include "../../git-compat-util.h"
 
+#ifndef USE_FSCACHE
+
 struct DIR {
 	struct dirent dd_dir; /* includes d_type */
 	HANDLE dd_handle;     /* FindFirstFile handle */
@@ -90,3 +92,4 @@ int closedir(DIR *dir)
 	free(dir);
 	return 0;
 }
+#endif

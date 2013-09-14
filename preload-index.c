@@ -82,6 +82,10 @@ static void preload_index(struct index_state *index, const char **pathspec)
 		threads = MAX_PARALLEL;
 	offset = 0;
 	work = DIV_ROUND_UP(index->cache_nr, threads);
+
+#ifdef USE_FSCACHE
+	fscache_enable(1);
+#endif
 	for (i = 0; i < threads; i++) {
 		struct thread_data *p = data+i;
 		p->index = index;
@@ -97,6 +101,9 @@ static void preload_index(struct index_state *index, const char **pathspec)
 		if (pthread_join(p->pthread, NULL))
 			die("unable to join threaded lstat");
 	}
+#ifdef USE_FSCACHE
+	fscache_enable(0);
+#endif
 }
 #endif
 
