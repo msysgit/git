@@ -32,7 +32,9 @@ typedef int socklen_t;
 #define WEXITSTATUS(x) ((x) & 0xff)
 #define WTERMSIG(x) SIGTERM
 
+#ifndef EWOULDBLOCK
 #define EWOULDBLOCK EAGAIN
+#endif
 #define SHUT_WR SD_SEND
 
 #define SIGHUP 1
@@ -46,8 +48,12 @@ typedef int socklen_t;
 #define F_SETFD 2
 #define FD_CLOEXEC 0x1
 
+#ifndef EAFNOSUPPORT
 #define EAFNOSUPPORT WSAEAFNOSUPPORT
+#endif
+#ifndef ECONNABORTED
 #define ECONNABORTED WSAECONNABORTED
+#endif
 
 struct passwd {
 	char *pw_name;
@@ -271,19 +277,42 @@ static inline int getrlimit(int resource, struct rlimit *rlp)
 	return 0;
 }
 
-/* Use mingw_lstat() instead of lstat()/stat() and
- * mingw_fstat() instead of fstat() on Windows.
+/*
+ * The unit of FILETIME is 100-nanoseconds since January 1, 1601, UTC.
+ * Returns the 100-nanoseconds ("hekto nanoseconds") since the epoch.
+ */
+static inline long long filetime_to_hnsec(const FILETIME *ft)
+{
+	long long winTime = ((long long)ft->dwHighDateTime << 32) + ft->dwLowDateTime;
+	/* Windows to Unix Epoch conversion */
+	return winTime - 116444736000000000LL;
+}
+
+static inline time_t filetime_to_time_t(const FILETIME *ft)
+{
+	return (time_t)(filetime_to_hnsec(ft) / 10000000);
+}
+
+/*
+ * Use mingw specific stat()/lstat()/fstat() implementations on Windows.
  */
 #define off_t off64_t
 #define lseek _lseeki64
-#ifndef ALREADY_DECLARED_STAT_FUNCS
+
+/* use struct stat with 64 bit st_size */
 #define stat _stati64
 int mingw_lstat(const char *file_name, struct stat *buf);
 int mingw_stat(const char *file_name, struct stat *buf);
 int mingw_fstat(int fd, struct stat *buf);
 #define fstat mingw_fstat
-#define lstat mingw_lstat
-#define _stati64(x,y) mingw_stat(x,y)
+extern int (*lstat)(const char *file_name, struct stat *buf);
+
+#ifndef _stati64
+# define _stati64(x,y) mingw_stat(x,y)
+#elif defined (_USE_32BIT_TIME_T)
+# define _stat32i64(x,y) mingw_stat(x,y)
+#else
+# define _stat64(x,y) mingw_stat(x,y)
 #endif
 
 int mingw_utime(const char *file_name, const struct utimbuf *times);
