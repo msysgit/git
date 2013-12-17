@@ -4,6 +4,8 @@
 /*
  * things that are not available in header files
  */
+#undef PATH_MAX
+#define PATH_MAX 4096
 
 typedef int pid_t;
 typedef int uid_t;
@@ -405,10 +407,29 @@ static inline int xutftowcs(wchar_t *wcs, const char *utf, size_t wcslen)
  */
 static inline int xutftowcs_path(wchar_t *wcs, const char *utf)
 {
-	int result = xutftowcsn(wcs, utf, MAX_PATH, -1);
-	if (result < 0 && errno == ERANGE)
+	wchar_t buf[PATH_MAX - 4];
+
+	if (!strcmp(utf, "nul")) {
+		/* don't prefix reserved file name 'nul' */
+		memcpy(wcs, &(L"nul\0"), sizeof(buf));
+		return 3;
+	}
+
+	int result = xutftowcsn(wcs, utf, PATH_MAX - 4, -1);
+	if (result < 0 && errno == ERANGE) {
 		errno = ENAMETOOLONG;
-	return result;
+		return result;
+	}
+
+	result = GetFullPathNameW(wcs, PATH_MAX - 4, buf, NULL);
+	if (wcsncmp(buf, L"\\\\?\\", 4) == 0) {
+		memcpy(wcs, buf, sizeof(buf));
+		return result;
+	}
+
+	wcscpy(wcs, L"\\\\?\\");
+	memcpy(wcs + 4, buf, sizeof(buf));
+	return result + 4;
 }
 
 /**

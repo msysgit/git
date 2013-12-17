@@ -32,7 +32,7 @@ DIR *opendir(const char *name)
 
 	/* append optional '/' and wildcard '*' */
 	if (len && !is_dir_sep(pattern[len - 1]))
-		pattern[len++] = '/';
+		pattern[len++] = '\\';
 	pattern[len++] = '*';
 	pattern[len] = 0;
 

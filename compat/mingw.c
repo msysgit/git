@@ -6,8 +6,17 @@
 #include "../run-command.h"
 #include "../cache.h"
 
+#undef MAX_PATH
+#define MAX_PATH PATH_MAX
+
 static const int delay[] = { 0, 1, 10, 20, 40 };
 unsigned int _CRT_fmode = _O_BINARY;
+
+static wchar_t * deprefix(wchar_t *path) {
+	if ( path && wcsncmp(path, L"\\\\?\\", 4) == 0 )
+		return path + 4;
+	return path;
+}
 
 int err_win_to_posix(DWORD winerr)
 {
@@ -337,11 +346,11 @@ int mingw_open (const char *filename, int oflags, ...)
 	mode = va_arg(args, int);
 	va_end(args);
 
-	if (filename && !strcmp(filename, "/dev/null"))
-		filename = "nul";
-
-	if (xutftowcs_path(wfilename, filename) < 0)
+	if (filename && !strcmp(filename, "/dev/null")) {
+		wcscpy(wfilename, L"nul\0");
+	} else if (xutftowcs_path(wfilename, filename) < 0) {
 		return -1;
+	}
 	fd = _wopen(wfilename, oflags, mode);
 
 	if (fd < 0 && (oflags & O_CREAT) && errno == EACCES) {
@@ -414,11 +423,15 @@ FILE *mingw_fopen (const char *filename, const char *otype)
 	if (hide_dotfiles == HIDE_DOTFILES_TRUE &&
 	    basename((char*)filename)[0] == '.')
 		hide = access(filename, F_OK);
-	if (filename && !strcmp(filename, "/dev/null"))
-		filename = "nul";
-	if (xutftowcs_path(wfilename, filename) < 0 ||
-		xutftowcs(wotype, otype, ARRAY_SIZE(wotype)) < 0)
+	if (filename && !strcmp(filename, "/dev/null"))  {
+		wcscpy(wfilename, L"nul\0");
+	} else if (xutftowcs_path(wfilename, filename) < 0) {
 		return NULL;
+	}
+
+	if (xutftowcs(wotype, otype, ARRAY_SIZE(wotype)) < 0) {
+		return NULL;
+	}
 	file = _wfopen(wfilename, wotype);
 	if (file && hide && make_hidden(wfilename))
 		warning("Could not mark '%s' as hidden.", filename);
@@ -433,11 +446,15 @@ FILE *mingw_freopen (const char *filename, const char *otype, FILE *stream)
 	if (hide_dotfiles == HIDE_DOTFILES_TRUE &&
 	    basename((char*)filename)[0] == '.')
 		hide = access(filename, F_OK);
-	if (filename && !strcmp(filename, "/dev/null"))
-		filename = "nul";
-	if (xutftowcs_path(wfilename, filename) < 0 ||
-		xutftowcs(wotype, otype, ARRAY_SIZE(wotype)) < 0)
+	if (filename && !strcmp(filename, "/dev/null"))  {
+		wcscpy(wfilename, L"nul\0");
+	} else if (xutftowcs_path(wfilename, filename) < 0) {
 		return NULL;
+	}
+
+	if (xutftowcs(wotype, otype, ARRAY_SIZE(wotype)) < 0) {
+		return NULL;
+	}
 	file = _wfreopen(wfilename, wotype, stream);
 	if (file && hide && make_hidden(wfilename))
 		warning("Could not mark '%s' as hidden.", filename);
@@ -480,7 +497,7 @@ int mingw_chdir(const char *dirname)
 	wchar_t wdirname[MAX_PATH];
 	if (xutftowcs_path(wdirname, dirname) < 0)
 		return -1;
-	return _wchdir(wdirname);
+	return _wchdir(deprefix(wdirname));
 }
 
 int mingw_chmod(const char *filename, int mode)
@@ -709,12 +726,20 @@ unsigned int sleep (unsigned int seconds)
 char *mingw_mktemp(char *template)
 {
 	wchar_t wtemplate[MAX_PATH];
+	char template_abspath[MAX_PATH];
 	if (xutftowcs_path(wtemplate, template) < 0)
 		return NULL;
 	if (!_wmktemp(wtemplate))
 		return NULL;
-	if (xwcstoutf(template, wtemplate, strlen(template) + 1) < 0)
+	if (xwcstoutf(template_abspath, deprefix(wtemplate), sizeof(template_abspath)) < 0)
 		return NULL;
+	/* copy only the base name name back to the template */
+	int idxt = strlen(template);
+	int idxtabs = strlen(template_abspath);
+	int len = strlen(basename(template));
+	for (; len >= 0; len--) {
+		template[idxt--] = template_abspath[idxtabs--];
+	}
 	return template;
 }
 
@@ -782,7 +807,7 @@ char *mingw_getcwd(char *pointer, int len)
 	wchar_t wpointer[MAX_PATH];
 	if (!_wgetcwd(wpointer, ARRAY_SIZE(wpointer)))
 		return NULL;
-	if (xwcstoutf(pointer, wpointer, len) < 0)
+	if (xwcstoutf(pointer, deprefix(wpointer), len) < 0)
 		return NULL;
 	for (i = 0; pointer[i]; i++)
 		if (pointer[i] == '\\')
@@ -1180,7 +1205,7 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 	wenvblk = make_environment_block(deltaenv);
 
 	memset(&pi, 0, sizeof(pi));
-	ret = CreateProcessW(wcmd, wargs, NULL, NULL, TRUE, flags,
+	ret = CreateProcessW(deprefix(wcmd), wargs, NULL, NULL, TRUE, flags,
 		wenvblk, dir ? wdir : NULL, &si, &pi);
 
 	free(wenvblk);
