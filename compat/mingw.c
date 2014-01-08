@@ -456,10 +456,6 @@ FILE *mingw_fopen (const char *filename, const char *otype)
 	int hide = 0;
 	FILE *file;
 	wchar_t wfilename[MAX_PATH], wotype[4];
-
-	if (is_dos_device_name(filename))
-		return fopen(filename, otype);
-
 	if (hide_dotfiles == HIDE_DOTFILES_TRUE &&
 	    basename((char*)filename)[0] == '.')
 		hide = access(filename, F_OK);
@@ -474,16 +470,11 @@ FILE *mingw_fopen (const char *filename, const char *otype)
 	return file;
 }
 
-#undef freopen
 FILE *mingw_freopen (const char *filename, const char *otype, FILE *stream)
 {
 	int hide = 0;
 	FILE *file;
 	wchar_t wfilename[MAX_PATH], wotype[4];
-
-	if (is_dos_device_name(filename))
-		return freopen(filename, otype, stream);
-
 	if (hide_dotfiles == HIDE_DOTFILES_TRUE &&
 	    basename((char*)filename)[0] == '.')
 		hide = access(filename, F_OK);
@@ -2146,6 +2137,30 @@ int xutftowcsn(wchar_t *wcs, const char *utfs, size_t wcslen, int utflen)
 	}
 	wcs[wpos] = 0;
 	return wpos;
+}
+
+int xutftowcs_canonical_path(wchar_t *wcs, const char *utf)
+{
+	wchar_t tmp[MAX_PATH];
+	int result;
+	result = xutftowcsn(tmp, utf, MAX_PATH, -1);
+	if (result < 0 && errno == ERANGE) {
+		errno = ENAMETOOLONG;
+	}
+	else if (is_dos_device_name(utf))
+		wcscpy(wcs, tmp);
+	else {
+		wchar_t tmp2[MAX_PATH*2];
+		result = GetFullPathNameW(tmp, MAX_PATH*2, tmp2, NULL);
+		if (result && result < MAX_PATH) {
+			wcsncpy(wcs, tmp2, MAX_PATH-1);
+			wcs[MAX_PATH-1] = 0;
+		} else {
+			result = -1;
+			errno = ENAMETOOLONG;
+		}
+	}
+	return result;
 }
 
 int xwcstoutf(char *utf, const wchar_t *wcs, size_t utflen)

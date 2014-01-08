@@ -455,29 +455,7 @@ static inline int xutftowcs_path(wchar_t *wcs, const char *utf)
  * fails with ENAMETOOLONG if input string is too long.  This version
  * also canonicalizes the path before returning.
  */
-static inline int xutftowcs_canonical_path(wchar_t *wcs, const char *utf)
-{
-	wchar_t tmp[SHRT_MAX];
-	int result;
-	result = xutftowcsn(tmp, utf, SHRT_MAX, -1);
-	if (result < 0 && errno == ERANGE)
-		errno = ENAMETOOLONG;
-	else if (wcsncmp(tmp, L"nul", 4) == 0 )
-		wcsncpy(wcs, tmp, 4);
-	else {
-		wchar_t tmp2[SHRT_MAX];
-		GetFullPathNameW(tmp, SHRT_MAX, tmp2, NULL);
-		if (wcslen(tmp2) < MAX_PATH)
-			wcsncpy(wcs, tmp2, MAX_PATH - 1);
-		else {
-			result = -1;
-			errno = ENAMETOOLONG;
-		}
-	}
-	if (result != -1)
-		result = wcslen(wcs);
-	return result;
-}
+int xutftowcs_canonical_path(wchar_t *wcs, const char *utf);
 
 /**
  * Converts UTF-16LE encoded string to UTF-8.
