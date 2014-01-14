@@ -547,9 +547,13 @@ proc git {args} {
 	set args [lrange $args 1 end]
 
 	_trace_exec [concat $opt $cmdp $args]
-	set result [eval exec $opt $cmdp $args]
 	if {[encoding system] != "utf-8"} {
-		set result [encoding convertfrom utf-8 [encoding convertto $result]]
+		set old_system_encoding [encoding system]
+		encoding system utf-8
+	}
+	set result [eval exec $opt $cmdp $args]
+	if {[info exist old_system_encoding]} {
+		encoding system $old_system_encoding
 	}
 	if {$::_trace} {
 		puts stderr "< $result"
