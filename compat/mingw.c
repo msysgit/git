@@ -2194,6 +2194,13 @@ static char *wcstoutfdup_startup(char *buffer, const wchar_t *wcs, size_t len)
 	return memcpy(malloc_startup(len), buffer, len);
 }
 
+static double start_time;
+
+static void trace_total_performance(void)
+{
+	trace_performance_since(start_time, "command: %s", GetCommandLineA());
+}
+
 void mingw_startup()
 {
 	int i, maxlen, argc;
@@ -2264,4 +2271,56 @@ void mingw_startup()
 
 	/* initialize Unicode console */
 	winansi_init();
+
+	/* enable performance logging of each git command */
+	if (trace_want(GIT_TRACE_PERFORMANCE)) {
+		start_time = ticks();
+		atexit(trace_total_performance);
+	}
+}
+
+/*
+ * Returns seconds since system start in very high resolution (CPU clock).
+ */
+double ticks()
+{
+	static double frequency = -1;
+	LARGE_INTEGER li;
+	if (frequency < 0) {
+		if (!QueryPerformanceFrequency(&li))
+			return 0.0;
+		frequency = li.QuadPart;
+	}
+	if (!QueryPerformanceCounter(&li))
+		return 0.0;
+	return ((double) li.QuadPart) / frequency;
+}
+
+/*
+ * Prints performance data if environment variable GIT_TRACE_PERFORMANCE points
+ * to a valid file name, otherwise a NOOP.
+ * Returns the current ticks() (without the formatting and printing).
+ */
+__attribute__((format (printf, 4, 5)))
+double trace_performance_file_line(const char *file, int lineno, double t,
+	const char *fmt, ...)
+{
+	struct strbuf buf = STRBUF_INIT;
+	va_list args;
+	if (!trace_want(GIT_TRACE_PERFORMANCE))
+		return 0.0;
+
+	strbuf_addf(&buf, "trace: at %s:%i, time: %g s", file, lineno, t);
+
+	if (fmt && *fmt) {
+		strbuf_addstr(&buf, ": ");
+		va_start(args, fmt);
+		strbuf_vaddf(&buf, fmt, args);
+		va_end(args);
+	}
+	strbuf_addch(&buf, '\n');
+
+	trace_strbuf(GIT_TRACE_PERFORMANCE, &buf);
+	strbuf_release(&buf);
+	return ticks();
 }
