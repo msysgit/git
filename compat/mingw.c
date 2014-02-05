@@ -534,7 +534,8 @@ int mingw_chdir(const char *dirname)
 	wchar_t wdirname[MAX_PATH];
 	if (xutftowcs_canonical_path(wdirname, dirname) < 0)
 		return -1;
-	return _wchdir(wdirname);
+	/* TODO: _wchdir() does not support long paths */
+	return _wchdir(strip_abspath_prefix(wdirname));
 }
 
 int mingw_chmod(const char *filename, int mode)
@@ -750,7 +751,8 @@ char *mingw_mktemp(char *template)
 	wchar_t wtemplate[MAX_PATH];
 	if (xutftowcs_path(wtemplate, template) < 0)
 		return NULL;
-	if (!_wmktemp(wtemplate))
+	/* TODO: _wmktemp() does not support long paths. */
+	if (!_wmktemp(strip_abspath_prefix(wtemplate)))
 		return NULL;
 	if (xwcstoutf(template, wtemplate, strlen(template) + 1) < 0)
 		return NULL;
@@ -821,7 +823,7 @@ char *mingw_getcwd(char *pointer, int len)
 	wchar_t wpointer[MAX_PATH];
 	if (!_wgetcwd(wpointer, ARRAY_SIZE(wpointer)))
 		return NULL;
-	if (xwcstoutf(pointer, wpointer, len) < 0)
+	if (xwcstoutf(pointer, strip_abspath_prefix(wpointer), len) < 0)
 		return NULL;
 	for (i = 0; pointer[i]; i++)
 		if (pointer[i] == '\\')
@@ -1219,8 +1221,8 @@ static pid_t mingw_spawnve_fd(const char *cmd, const char **argv, char **deltaen
 	wenvblk = make_environment_block(deltaenv);
 
 	memset(&pi, 0, sizeof(pi));
-	ret = CreateProcessW(wcmd, wargs, NULL, NULL, TRUE, flags,
-		wenvblk, dir ? wdir : NULL, &si, &pi);
+	ret = CreateProcessW(strip_abspath_prefix(wcmd), wargs, NULL, NULL, TRUE, flags,
+		wenvblk, dir ? strip_abspath_prefix(wdir) : NULL, &si, &pi);
 
 	free(wenvblk);
 	free(wargs);

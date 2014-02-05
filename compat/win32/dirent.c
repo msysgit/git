@@ -73,9 +73,13 @@ DIR *dirent_opendir(const char *name)
 	if ((len = xutftowcs_canonical_path(pattern, name)) < 0)
 		return NULL;
 
-	/* append optional '/' and wildcard '*' */
+	/*
+	 * append optional '\' and wildcard '*'
+	 * note: when using "\\?\" as a prefix for long paths,
+	 * we cannot expect Windows to remap '/' to '\' for us.
+	 */
 	if (len && !is_dir_sep(pattern[len - 1]))
-		pattern[len++] = '/';
+		pattern[len++] = '\\';
 	pattern[len++] = '*';
 	pattern[len] = 0;
 

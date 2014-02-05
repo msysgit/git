@@ -81,6 +81,13 @@ struct itimerval {
 #undef HELP_COMMAND /* from winuser.h */
 
 /*
+ * redefine MAX_PATH to SHRT_MAX; the actual maximum when using
+ * long Windows paths with "\\?\"
+ */
+#undef MAX_PATH
+#define MAX_PATH SHRT_MAX
+
+/*
  * trivial stubs
  */
 
@@ -357,6 +364,16 @@ HANDLE winansi_get_osfhandle(int fd);
  */
 
 #define has_dos_drive_prefix(path) (isalpha(*(path)) && (path)[1] == ':')
+#define has_win_abspath_prefix(path) ((path)[0] == '\\' && (path)[1] == '\\' \
+			&& (path)[2] == '?' && (path)[3] == '\\')
+#define has_win_abspath_prefix_w(path) ((path)[0] == L'\\' && (path)[1] == L'\\' \
+			&& (path)[2] == L'?' && (path)[3] == L'\\')
+static inline wchar_t * strip_abspath_prefix(wchar_t *path)
+{
+	if (path && has_win_abspath_prefix_w(path))
+		return &path[4];
+	return path;
+}
 #define is_dir_sep(c) ((c) == '/' || (c) == '\\')
 static inline char *mingw_find_last_dir_sep(const char *path)
 {
@@ -457,18 +474,23 @@ static inline int xutftowcs_path(wchar_t *wcs, const char *utf)
  */
 static inline int xutftowcs_canonical_path(wchar_t *wcs, const char *utf)
 {
-	wchar_t tmp[SHRT_MAX];
+	wchar_t tmp[MAX_PATH];
 	int result;
-	result = xutftowcsn(tmp, utf, SHRT_MAX, -1);
+	result = xutftowcsn(tmp, utf, MAX_PATH, -1);
 	if (result < 0 && errno == ERANGE)
 		errno = ENAMETOOLONG;
 	else if (wcsncmp(tmp, L"nul", 4) == 0 )
 		wcsncpy(wcs, tmp, 4);
 	else {
-		wchar_t tmp2[SHRT_MAX];
-		GetFullPathNameW(tmp, SHRT_MAX, tmp2, NULL);
-		if (wcslen(tmp2) < MAX_PATH)
+		wchar_t tmp2[MAX_PATH];
+		GetFullPathNameW(tmp, MAX_PATH, tmp2, NULL);
+		if (wcslen(tmp2) < MAX_PATH && has_win_abspath_prefix_w(tmp2))
 			wcsncpy(wcs, tmp2, MAX_PATH - 1);
+		/* magic: 5 = \\?\ plus null */
+		else if (wcslen(tmp2) < MAX_PATH - 5 && !has_win_abspath_prefix_w(tmp2)) {
+			wcscpy(wcs, L"\\\\?\\");
+			wcsncat(wcs, tmp2, MAX_PATH - 5);
+		}
 		else {
 			result = -1;
 			errno = ENAMETOOLONG;

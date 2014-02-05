@@ -619,6 +619,12 @@ int normalize_path_copy_len(char *dst, const char *src, int *prefix_len)
 {
 	char *dst0;
 
+	/*
+	 * If path contains "\\?\", we can skip this while copying.
+	 * We will re-add this later if necessary.
+	 */
+	if (has_win_abspath_prefix(src))
+		src += 4;
 	if (has_dos_drive_prefix(src)) {
 		*dst++ = *src++;
 		*dst++ = *src++;
