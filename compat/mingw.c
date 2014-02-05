@@ -5,7 +5,6 @@
 #include "../strbuf.h"
 #include "../run-command.h"
 #include "../cache.h"
-#include "../string-list.h"
 
 static const int delay[] = { 0, 1, 10, 20, 40 };
 unsigned int _CRT_fmode = _O_BINARY;
@@ -206,7 +205,7 @@ int mingw_unlink(const char *pathname)
 {
 	int ret, tries = 0;
 	wchar_t wpathname[MAX_PATH];
-	if (xutftowcs_canonical_path(wpathname, pathname) < 0)
+	if (xutftowcs_path(wpathname, pathname) < 0)
 		return -1;
 
 	/* read-only files cannot be removed */
@@ -257,7 +256,7 @@ int mingw_rmdir(const char *pathname)
 {
 	int ret, tries = 0;
 	wchar_t wpathname[MAX_PATH];
-	if (xutftowcs_canonical_path(wpathname, pathname) < 0)
+	if (xutftowcs_path(wpathname, pathname) < 0)
 		return -1;
 
 	while ((ret = _wrmdir(wpathname)) == -1 && tries < ARRAY_SIZE(delay)) {
@@ -299,7 +298,7 @@ void mingw_mark_as_git_dir(const char *dir)
 {
 	wchar_t wdir[MAX_PATH];
 	if (hide_dotfiles != HIDE_DOTFILES_FALSE && !is_bare_repository())
-		if (xutftowcs_canonical_path(wdir, dir) < 0 || make_hidden(wdir))
+		if (xutftowcs_path(wdir, dir) < 0 || make_hidden(wdir))
 			warning("Failed to make '%s' hidden", dir);
 	git_config_set("core.hideDotFiles",
 		hide_dotfiles == HIDE_DOTFILES_FALSE ? "false" :
@@ -311,7 +310,7 @@ int mingw_mkdir(const char *path, int mode)
 {
 	int ret;
 	wchar_t wpath[MAX_PATH];
-	if (xutftowcs_canonical_path(wpath, path) < 0)
+	if (xutftowcs_path(wpath, path) < 0)
 		return -1;
 	ret = _wmkdir(wpath);
 	if (!ret && hide_dotfiles == HIDE_DOTFILES_TRUE) {
@@ -341,7 +340,7 @@ int mingw_open (const char *filename, int oflags, ...)
 	if (filename && !strcmp(filename, "/dev/null"))
 		filename = "nul";
 
-	if (xutftowcs_canonical_path(wfilename, filename) < 0)
+	if (xutftowcs_path(wfilename, filename) < 0)
 		return -1;
 	fd = _wopen(wfilename, oflags, mode);
 
@@ -406,66 +405,18 @@ int mingw_fgetc(FILE *stream)
 	return ch;
 }
 
-static struct string_list_item dos_device_names_items[] = {
-	{ "AUX", NULL},
-	{ "CLOCK$", NULL},
-	{ "COM1", NULL},
-	{ "COM2", NULL},
-	{ "COM3", NULL},
-	{ "COM4", NULL},
-	{ "CON", NULL},
-	{ "CONERR$", NULL},
-	{ "CONIN$", NULL},
-	{ "CONOUT$", NULL},
-	{ "LPT1", NULL},
-	{ "LPT2", NULL},
-	{ "LPT3", NULL},
-	{ "NUL", NULL},
-	{ "PRN", NULL},
-	{ "aux", NULL},
-	{ "clock$", NULL},
-	{ "com1", NULL},
-	{ "com2", NULL},
-	{ "com3", NULL},
-	{ "com4", NULL},
-	{ "con", NULL},
-	{ "conerr$", NULL},
-	{ "conin$", NULL},
-	{ "conout$", NULL},
-	{ "lpt1", NULL},
-	{ "lpt2", NULL},
-	{ "lpt3", NULL},
-	{ "nul", NULL},
-	{ "prn", NULL}
-};
-
-static struct string_list dos_device_names = {
-	&dos_device_names_items[0], ARRAY_SIZE(dos_device_names_items),
-	0, 0, NULL
-};
-
-static int is_dos_device_name(const char *filename)
-{
-	return filename && !strchr(filename, '/') &&
-		string_list_has_string(&dos_device_names, filename);
-}
-
 #undef fopen
 FILE *mingw_fopen (const char *filename, const char *otype)
 {
 	int hide = 0;
 	FILE *file;
 	wchar_t wfilename[MAX_PATH], wotype[4];
-
-	if (is_dos_device_name(filename))
-		return fopen(filename, otype);
-
 	if (hide_dotfiles == HIDE_DOTFILES_TRUE &&
 	    basename((char*)filename)[0] == '.')
 		hide = access(filename, F_OK);
 	if (filename && !strcmp(filename, "/dev/null"))
 		filename = "nul";
-	if (xutftowcs_canonical_path(wfilename, filename) < 0 ||
+	if (xutftowcs_path(wfilename, filename) < 0 ||
 		xutftowcs(wotype, otype, ARRAY_SIZE(wotype)) < 0)
 		return NULL;
 	file = _wfopen(wfilename, wotype);
@@ -474,22 +425,17 @@ FILE *mingw_fopen (const char *filename, const char *otype)
 	return file;
 }
 
-#undef freopen
 FILE *mingw_freopen (const char *filename, const char *otype, FILE *stream)
 {
 	int hide = 0;
 	FILE *file;
 	wchar_t wfilename[MAX_PATH], wotype[4];
-
-	if (is_dos_device_name(filename))
-		return freopen(filename, otype, stream);
-
 	if (hide_dotfiles == HIDE_DOTFILES_TRUE &&
 	    basename((char*)filename)[0] == '.')
 		hide = access(filename, F_OK);
 	if (filename && !strcmp(filename, "/dev/null"))
 		filename = "nul";
-	if (xutftowcs_canonical_path(wfilename, filename) < 0 ||
+	if (xutftowcs_path(wfilename, filename) < 0 ||
 		xutftowcs(wotype, otype, ARRAY_SIZE(wotype)) < 0)
 		return NULL;
 	file = _wfreopen(wfilename, wotype, stream);
@@ -523,7 +469,7 @@ int mingw_fflush(FILE *stream)
 int mingw_access(const char *filename, int mode)
 {
 	wchar_t wfilename[MAX_PATH];
-	if (xutftowcs_canonical_path(wfilename, filename) < 0)
+	if (xutftowcs_path(wfilename, filename) < 0)
 		return -1;
 	/* X_OK is not supported by the MSVCRT version */
 	return _waccess(wfilename, mode & ~X_OK);
@@ -532,7 +478,7 @@ int mingw_access(const char *filename, int mode)
 int mingw_chdir(const char *dirname)
 {
 	wchar_t wdirname[MAX_PATH];
-	if (xutftowcs_canonical_path(wdirname, dirname) < 0)
+	if (xutftowcs_path(wdirname, dirname) < 0)
 		return -1;
 	return _wchdir(wdirname);
 }
@@ -540,7 +486,7 @@ int mingw_chdir(const char *dirname)
 int mingw_chmod(const char *filename, int mode)
 {
 	wchar_t wfilename[MAX_PATH];
-	if (xutftowcs_canonical_path(wfilename, filename) < 0)
+	if (xutftowcs_path(wfilename, filename) < 0)
 		return -1;
 	return _wchmod(wfilename, mode);
 }
@@ -556,7 +502,7 @@ static int do_lstat(int follow, const char *file_name, struct stat *buf)
 {
 	WIN32_FILE_ATTRIBUTE_DATA fdata;
 	wchar_t wfilename[MAX_PATH];
-	if (xutftowcs_canonical_path(wfilename, file_name) < 0)
+	if (xutftowcs_path(wfilename, file_name) < 0)
 		return -1;
 
 	if (GetFileAttributesExW(wfilename, GetFileExInfoStandard, &fdata)) {
@@ -700,7 +646,7 @@ int mingw_utime (const char *file_name, const struct utimbuf *times)
 	int fh, rc;
 	DWORD attrs;
 	wchar_t wfilename[MAX_PATH];
-	if (xutftowcs_canonical_path(wfilename, file_name) < 0)
+	if (xutftowcs_path(wfilename, file_name) < 0)
 		return -1;
 
 	/* must have write permission */
@@ -1683,8 +1629,7 @@ int mingw_rename(const char *pold, const char *pnew)
 	DWORD attrs, gle;
 	int tries = 0;
 	wchar_t wpold[MAX_PATH], wpnew[MAX_PATH];
-	if (xutftowcs_canonical_path(wpold, pold) < 0 ||
-		xutftowcs_canonical_path(wpnew, pnew) < 0)
+	if (xutftowcs_path(wpold, pold) < 0 || xutftowcs_path(wpnew, pnew) < 0)
 		return -1;
 
 	/*
@@ -1961,8 +1906,8 @@ int link(const char *oldpath, const char *newpath)
 	typedef BOOL (WINAPI *T)(LPCWSTR, LPCWSTR, LPSECURITY_ATTRIBUTES);
 	static T create_hard_link = NULL;
 	wchar_t woldpath[MAX_PATH], wnewpath[MAX_PATH];
-	if (xutftowcs_canonical_path(woldpath, oldpath) < 0 ||
-		xutftowcs_canonical_path(wnewpath, newpath) < 0)
+	if (xutftowcs_path(woldpath, oldpath) < 0 ||
+		xutftowcs_path(wnewpath, newpath) < 0)
 		return -1;
 
 	if (!create_hard_link) {
