@@ -39,9 +39,11 @@ test_expect_success 'creating initial files and commits' '
 	git mv second secondfile &&
 	git commit -a -m "remove 1st and rename 2nd" &&
 
+	# "git commit -m" would break MinGW, as Windows refuse to pass
+	# iso8859-1 encoded parameter to git.
 	echo "1st line 2nd file" >secondfile &&
 	echo "2nd line 2nd file" >>secondfile &&
-	git -c "i18n.commitEncoding=iso8859-1" commit -a -m "$(commit_msg iso8859-1)" &&
+	commit_msg iso8859-1 | git -c "i18n.commitEncoding=iso8859-1" commit -a -F - &&
 	head5=$(git rev-parse --verify HEAD)
 '
 # git log --pretty=oneline # to see those SHA1 involved
@@ -329,9 +331,11 @@ test_expect_success 'redoing the last two commits should succeed' '
 	git mv second secondfile &&
 	git commit -a -m "remove 1st and rename 2nd" &&
 
+	# "git commit -m" would break MinGW, as Windows refuse to pass
+	# iso8859-1 encoded parameter to git.
 	echo "1st line 2nd file" >secondfile &&
 	echo "2nd line 2nd file" >>secondfile &&
-	git -c "i18n.commitEncoding=iso8859-1" commit -a -m "$(commit_msg iso8859-1)" &&
+	commit_msg iso8859-1 | git -c "i18n.commitEncoding=iso8859-1" commit -a -F - &&
 	check_changes $head5
 '
 
