@@ -439,7 +439,8 @@ done:
 	}
 	strbuf_release(&req_buf);
 
-	consume_shallow_list(args, fd[0]);
+	if (!got_ready || !no_done)
+		consume_shallow_list(args, fd[0]);
 	while (flushes || multi_ack) {
 		int ack = get_ack(fd[0], result_sha1);
 		if (ack) {
@@ -946,17 +947,6 @@ static void update_shallow(struct fetch_pack_args *args,
 
 	if (!si->shallow || !si->shallow->nr)
 		return;
-
-	if (alternate_shallow_file) {
-		/*
-		 * The temporary shallow file is only useful for
-		 * index-pack and unpack-objects because it may
-		 * contain more roots than we want. Delete it.
-		 */
-		if (*alternate_shallow_file)
-			unlink(alternate_shallow_file);
-		free((char *)alternate_shallow_file);
-	}
 
 	if (args->cloning) {
 		/*
