@@ -209,7 +209,7 @@ extern int write_shallow_commits(struct strbuf *out, int use_pack_protocol,
 extern void setup_alternate_shallow(struct lock_file *shallow_lock,
 				    const char **alternate_shallow_file,
 				    const struct sha1_array *extra);
-extern char *setup_temporary_shallow(const struct sha1_array *extra);
+extern const char *setup_temporary_shallow(const struct sha1_array *extra);
 extern void advertise_shallow_grafts(int);
 
 struct shallow_info {
@@ -303,5 +303,8 @@ extern void print_commit_list(struct commit_list *list,
 extern void check_commit_signature(const struct commit* commit, struct signature_check *sigc);
 
 int compare_commits_by_commit_date(const void *a_, const void *b_, void *unused);
+
+LAST_ARG_MUST_BE_NULL
+extern int run_commit_hook(int editor_is_used, const char *index_file, const char *name, ...);
 
 #endif /* COMMIT_H */

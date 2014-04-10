@@ -903,11 +903,11 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 
 	if (!interactive && !dry_run && !force) {
 		if (config_set)
-			die(_("clean.requireForce set to true and neither -i, -n nor -f given; "
+			die(_("clean.requireForce set to true and neither -i, -n, nor -f given; "
 				  "refusing to clean"));
 		else
-			die(_("clean.requireForce defaults to true and neither -i, -n nor -f given; "
-				  "refusing to clean"));
+			die(_("clean.requireForce defaults to true and neither -i, -n, nor -f given;"
+				  " refusing to clean"));
 	}
 
 	if (force > 1)
@@ -933,48 +933,28 @@ int cmd_clean(int argc, const char **argv, const char *prefix)
 
 	for (i = 0; i < dir.nr; i++) {
 		struct dir_entry *ent = dir.entries[i];
-		int len, pos;
 		int matches = 0;
-		const struct cache_entry *ce;
 		struct stat st;
 		const char *rel;
 
-		/*
-		 * Remove the '/' at the end that directory
-		 * walking adds for directory entries.
-		 */
-		len = ent->len;
-		if (len && ent->name[len-1] == '/')
-			len--;
-		pos = cache_name_pos(ent->name, len);
-		if (0 <= pos)
-			continue;	/* exact match */
-		pos = -pos - 1;
-		if (pos < active_nr) {
-			ce = active_cache[pos];
-			if (ce_namelen(ce) == len &&
-			    !memcmp(ce->name, ent->name, len))
-				continue; /* Yup, this one exists unmerged */
-		}
+		if (!cache_name_is_other(ent->name, ent->len))
+			continue;
 
 		if (lstat(ent->name, &st))
 			die_errno("Cannot lstat '%s'", ent->name);
 
 		if (pathspec.nr)
-			matches = match_pathspec_depth(&pathspec, ent->name,
-						       len, 0, NULL);
+			matches = dir_path_match(ent, &pathspec, 0, NULL);
 
-		if (S_ISDIR(st.st_mode)) {
-			if (remove_directories || (matches == MATCHED_EXACTLY)) {
-				rel = relative_path(ent->name, prefix, &buf);
-				string_list_append(&del_list, rel);
-			}
-		} else {
-			if (pathspec.nr && !matches)
-				continue;
-			rel = relative_path(ent->name, prefix, &buf);
-			string_list_append(&del_list, rel);
-		}
+		if (pathspec.nr && !matches)
+			continue;
+
+		if (S_ISDIR(st.st_mode) && !remove_directories &&
+		    matches != MATCHED_EXACTLY)
+			continue;
+
+		rel = relative_path(ent->name, prefix, &buf);
+		string_list_append(&del_list, rel);
 	}
 
 	if (interactive && del_list.nr > 0)
