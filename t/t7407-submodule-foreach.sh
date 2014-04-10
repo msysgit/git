@@ -178,10 +178,6 @@ test_expect_success 'test messages from "foreach --recursive"' '
 		cd clone2 &&
 		git submodule foreach --recursive "true" > ../actual
 	) &&
-	if test_have_prereq MINGW
-	then
-		dos2unix actual
-	fi &&
 	test_i18ncmp expect actual
 '
 
@@ -251,10 +247,6 @@ test_expect_success 'test "status --recursive"' '
 		cd clone3 &&
 		git submodule status --recursive > ../actual
 	) &&
-	if test_have_prereq MINGW
-	then
-		dos2unix actual
-	fi &&
 	test_cmp expect actual
 '
 
