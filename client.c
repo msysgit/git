@@ -19,10 +19,83 @@ static void bcopy(void *dest, void *source, int length)
 
 static void sleep(int seconds)
 {
-return;
 	Sleep(seconds * 1000);
 }
+#if WIN32
+int win_start_process(const char* exename, int exestdin, int exestdout, int exestderr)
+{
+	int result;
+	STARTUPINFO si;
+	memset(&si, 0, sizeof(si));
+	si.cb = sizeof(si);
+	si.dwFlags = STARTF_USESTDHANDLES;
+	{
+		struct {
+			int fd;
+			HANDLE fall_back_hdl;
+			HANDLE *si_hdl;
+		} ioe[] = {
+			{
+				exestdin, 
+				GetStdHandle(STD_INPUT_HANDLE),
+				&si.hStdInput
+			},
+			{ 
+				exestdout,
+				GetStdHandle(STD_OUTPUT_HANDLE),
+				&si.hStdOutput
+			},
+			{ 
+				exestderr, 
+				GetStdHandle(STD_ERROR_HANDLE),
+				&si.hStdError
+			},
 
+		};
+		int i;
+		for (i = 0; i < sizeof(ioe) / sizeof(ioe[0]); i++) {
+			if (ioe[i].fd < 0) {
+				*ioe[i].si_hdl = ioe[i].fall_back_hdl;
+			}
+			else {
+				HANDLE hdl;
+				hdl = (HANDLE)_get_osfhandle(ioe[i].fd);
+				if (hdl != INVALID_HANDLE_VALUE) {
+					*ioe[i].si_hdl = hdl;
+				}
+				else {
+					*ioe[i].si_hdl = ioe[i].fall_back_hdl;
+				}
+			}
+		}
+	}
+	
+	{
+		PROCESS_INFORMATION pi;
+		BOOL state;
+		state = CreateProcess(exename, NULL, NULL, NULL, TRUE, 0, 
+			NULL, 
+			NULL,
+			&si,
+			&pi);
+
+		result = state ? 0 : -1;
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+	}
+
+	return result;
+}
+
+int read_all_from_socket_with_process(int sockfd)
+{
+	int result;
+	result = win_start_process("svr_reader.exe", sockfd, -1, -1);
+	return result;
+}
+
+
+#endif
 #include <fcntl.h>
 static int mingw_socket(int domain, int type, int protocol)
 {
@@ -190,17 +263,68 @@ void error(const char *msg)
 }
 
 
+int read_all_from_socket_in_process(int sockfd)
+{
+#define BUFFER_SIZE 256 
+	char buffer[BUFFER_SIZE];
+	int n;
+	int result;
+	result = 0;
+	do {
+		bzero(buffer, sizeof(buffer));
+		n = read(sockfd,buffer,sizeof(buffer) - 1);
+		if (n == 0) {
+			break;
+		}
+		else if (n < 0)
+		{
+			error("Error reading from socket");
+			result = -1;
+		}
+		else {
+			fputs(buffer, stdout);			
+			fflush(stdout);
+		}
+	} while (1);
+	return result; 
+}
+int read_all_from_socket(int sockfd, int in_proc)
+{
+	int result;
+	if (in_proc)
+	{
+		result = read_all_from_socket_in_process(sockfd);
+	}
+	else
+	{
+		result = read_all_from_socket_with_process(sockfd);
+	}
+	return result;
+}
+
 int main(int argc, char *argv[])
 {
-    int sockfd, portno, n;
+    int sockfd, portno;
     struct sockaddr_in serv_addr;
     struct hostent *server;
-
-    char buffer[256];
+    int in_proc;
+    in_proc = 1;
     if (argc < 3) {
        fprintf(stderr,"usage %s hostname port\n", argv[0]);
        exit(0);
     }
+    {
+     	int i;
+	for (i = 0; i < argc; i++)
+	{
+		if (strcmp(argv[i], "-p") == 0)
+		{
+			in_proc = 0;	
+		}
+	}
+     }
+
+
 #ifdef WIN32
      WSADATA wsa;
      if (WSAStartup(MAKEWORD(2,2), &wsa)) error("WSAStartup");
@@ -221,16 +345,12 @@ int main(int argc, char *argv[])
     serv_addr.sin_port = htons(portno);
     if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) 
         error("ERROR connecting");
-    printf("Sleeping 1 second\n");
-    sleep(1);
-    bzero(buffer,256);
-    n = read(sockfd,buffer,255);
-    if (n < 0) 
-         error("ERROR reading from socket");
-    printf("%s\n",buffer);
+    read_all_from_socket(sockfd, in_proc);
     close(sockfd);
 #ifdef WIN32
      WSACleanup();
 #endif
     return 0;
 }
+
+
