@@ -93,37 +93,6 @@ int mingw_accept(int sockfd1, struct sockaddr *sa, socklen_t *sz)
 		error("unable to make a socket file descriptor: %s",
 			strerror(err));
 	}
-	if (s2)
-	{
-		BOOL bState;
-		DWORD dwFlags;
-		
-		bState = GetHandleInformation((HANDLE)s2, &dwFlags);
-		if (bState)
-		{
-			const char* flag_inherit;
-			const char* protect_from_close;
-			if (dwFlags & HANDLE_FLAG_INHERIT)
-			{
-				flag_inherit = "Yes";
-			}
-			else
-			{
-				flag_inherit = "No";
-			}
-			if (dwFlags & HANDLE_FLAG_PROTECT_FROM_CLOSE)
-			{
-				protect_from_close = "Yes";
-			}
-			else
-			{
-				protect_from_close = "No";
-			}
-			printf("accept socket handle info: \n"
-			"Handle Inherit: %s\n"
-			"Protect from close: %s\n", flag_inherit, protect_from_close);
-		}
-	}
 	return sockfd2;
 }
 #define accept mingw_accept

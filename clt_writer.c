@@ -31,83 +31,6 @@ int write_all(int max_line)
 }
 
 
-#if WIN32
-int write_handle_info(int fd)
-{
-	HANDLE osh;
-	int result;
-	osh = (HANDLE)_get_osfhandle(fd);
-	if (osh != INVALID_HANDLE_VALUE)
-	{
-		BOOL bState;
-		DWORD dwFlags;
-		
-		bState = GetHandleInformation(osh, &dwFlags);
-		if (bState)
-		{
-			const char* flag_inherit;
-			const char* protect_from_close;
-			if (dwFlags & HANDLE_FLAG_INHERIT)
-			{
-				flag_inherit = "Yes";
-			}
-			else
-			{
-				flag_inherit = "No";
-			}
-			if (dwFlags & HANDLE_FLAG_PROTECT_FROM_CLOSE)
-			{
-				protect_from_close = "Yes";
-			}
-			else
-			{
-				protect_from_close = "No";
-			}
-			printf("file descripter(%d): \n"
-			"Handle Inherit: %s\n"
-			"Protect from close: %s\n", 
-			fd, flag_inherit, protect_from_close);
-			result = 0;
-		}	
-		else
-		{
-			result = -1;
-		}
-	}
-	else
-	{
-		result = -1;
-	}
-	return result;
-}
-#else
-int write_handle_info(int fd)
-{
-	return 0;
-}
-
-#endif
-
-int write_file_status(FILE *f)
-{
-	int fd;
-	int result;
-#if WIN32
-	fd = _fileno(f);
-#else
-	fd = fileno(f);
-#endif
-	if (fd != -1)
-	{
-		result = write_handle_info(fd);
-	}
-	else
-	{
-		result = -1;
-	}
-	return result;
-}
-
 int main(int argc, char *argv[])
 {
 	int result;
@@ -117,7 +40,6 @@ int main(int argc, char *argv[])
 	} else {
 		count_of_line = atoi(argv[1]);
 	}
-	result = write_file_status(stdout);
 	result = write_all(count_of_line);
 	return result;
 }
