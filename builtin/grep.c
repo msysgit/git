@@ -875,7 +875,7 @@ int cmd_grep(int argc, const char **argv, const char *prefix)
 			pager += len - 4;
 
 		if (opt.ignore_case && !strcmp("less", pager))
-			string_list_append(&path_list, "-i");
+			string_list_append(&path_list, "-I");
 
 		if (!strcmp("less", pager) || !strcmp("vi", pager)) {
 			struct strbuf buf = STRBUF_INIT;
