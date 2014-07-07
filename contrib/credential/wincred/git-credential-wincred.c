@@ -6,6 +6,10 @@
 #include <stdio.h>
 #include <io.h>
 #include <fcntl.h>
+#include <ctype.h>
+#include <string.h>
+#include <stdlib.h>
+#include <assert.h>
 
 /* common helpers */
 
@@ -28,7 +32,7 @@ static void *xmalloc(size_t size)
 	if (!ret && !size)
 		ret = malloc(1);
 	if (!ret)
-		 die("Out of memory");
+		die("Out of memory");
 	return ret;
 }
 
@@ -57,12 +61,13 @@ typedef struct _CREDENTIALW {
 } CREDENTIALW, *PCREDENTIALW;
 
 #define CRED_TYPE_GENERIC 1
+#define CRED_PERSIST_SESSION 1
 #define CRED_PERSIST_LOCAL_MACHINE 2
 #define CRED_MAX_ATTRIBUTES 64
 
 typedef BOOL (WINAPI *CredWriteWT)(PCREDENTIALW, DWORD);
 typedef BOOL (WINAPI *CredEnumerateWT)(LPCWSTR, DWORD, DWORD *,
-    PCREDENTIALW **);
+				       PCREDENTIALW **);
 typedef VOID (WINAPI *CredFreeT)(PVOID);
 typedef BOOL (WINAPI *CredDeleteWT)(LPCWSTR, DWORD, DWORD);
 
@@ -82,7 +87,7 @@ static void load_cred_funcs(void)
 	/* get function pointers */
 	CredWriteW = (CredWriteWT)GetProcAddress(advapi, "CredWriteW");
 	CredEnumerateW = (CredEnumerateWT)GetProcAddress(advapi,
-	    "CredEnumerateW");
+			 "CredEnumerateW");
 	CredFree = (CredFreeT)GetProcAddress(advapi, "CredFree");
 	CredDeleteW = (CredDeleteWT)GetProcAddress(advapi, "CredDeleteW");
 	if (!CredWriteW || !CredEnumerateW || !CredFree || !CredDeleteW)
@@ -101,7 +106,7 @@ static void write_item(const char *what, LPCWSTR wbuf, int wlen)
 	}
 
 	int len = WideCharToMultiByte(CP_UTF8, 0, wbuf, wlen, NULL, 0, NULL,
-	    FALSE);
+				      FALSE);
 	buf = xmalloc(len);
 
 	if (!WideCharToMultiByte(CP_UTF8, 0, wbuf, wlen, buf, len, NULL, FALSE))
@@ -151,10 +156,10 @@ static int match_cred(const CREDENTIALW *cred)
 		return 0;
 
 	return match_part(&target, L"git", L":") &&
-		match_part(&target, protocol, L"://") &&
-		match_part(&target, wusername, L"@") &&
-		match_part(&target, host, L"/") &&
-		match_part(&target, path, L"");
+	       match_part(&target, protocol, L"://") &&
+	       match_part(&target, wusername, L"@") &&
+	       match_part(&target, host, L"/") &&
+	       match_part(&target, path, L"");
 }
 
 static void get_credential(void)
@@ -170,22 +175,33 @@ static void get_credential(void)
 	for (i = 0; i < num_creds; ++i)
 		if (match_cred(creds[i])) {
 			write_item("username", creds[i]->UserName,
-				creds[i]->UserName ? wcslen(creds[i]->UserName) : 0);
+				   creds[i]->UserName ? wcslen(creds[i]->UserName) : 0);
 			write_item("password",
-				(LPCWSTR)creds[i]->CredentialBlob,
-				creds[i]->CredentialBlobSize / sizeof(WCHAR));
+				   (LPCWSTR)creds[i]->CredentialBlob,
+				   creds[i]->CredentialBlobSize / sizeof(WCHAR));
 			break;
 		}
 
 	CredFree(creds);
 }
 
-static void store_credential(void)
+static const char* OPTION_KEY = "--type";
+static const char* PERSIST_SESSION_SHORT = "-s";
+static const char* PERSIST_SESSION = "session";
+
+static void store_credential(const char *type)
 {
 	CREDENTIALW cred;
 
 	if (!wusername || !password)
 		return;
+
+	// default value, keep in local computer.
+	DWORD persit = CRED_PERSIST_LOCAL_MACHINE;
+
+	if ((type != NULL) && (!strncmp(type, PERSIST_SESSION, strlen(type)) || !strncmp(type, PERSIST_SESSION_SHORT, strlen(type)))) {
+		persit = CRED_PERSIST_SESSION;
+	}
 
 	cred.Flags = 0;
 	cred.Type = CRED_TYPE_GENERIC;
@@ -193,7 +209,7 @@ static void store_credential(void)
 	cred.Comment = L"saved by git-credential-wincred";
 	cred.CredentialBlobSize = (wcslen(password)) * sizeof(WCHAR);
 	cred.CredentialBlob = (LPVOID)password;
-	cred.Persist = CRED_PERSIST_LOCAL_MACHINE;
+	cred.Persist = persit;
 	cred.AttributeCount = 0;
 	cred.Attributes = NULL;
 	cred.TargetAlias = NULL;
@@ -262,13 +278,89 @@ static void read_credential(void)
 	}
 }
 
+static char** split(char* str, const char delim)
+{
+	char** result = 0;
+	size_t count = 0;
+	char* tmp = str;
+	char* last_comma = 0;
+	char delims[2];
+	delims[0] = delim;
+	delims[1] = 0;
+
+	/* Count how many elements will be extracted. */
+	while (*tmp) {
+		if (delim == *tmp) {
+			count++;
+			last_comma = tmp;
+		}
+		tmp++;
+	}
+
+	/* Add space for trailing token. */
+	count += last_comma < (str + strlen(str) - 1);
+
+	/* Add space for terminating null string so caller
+	knows where the list of returned strings ends. */
+	count++;
+
+	result = malloc(sizeof(char*) * count);
+
+	if (result) {
+		size_t idx = 0;
+		char* token = strtok(str, delims);
+
+		while (token) {
+			assert(idx < count);
+			*(result + idx++) = strdup(token);
+			token = strtok(0, delims);
+		}
+		assert(idx == count - 1);
+		*(result + idx) = 0;
+	}
+
+	return result;
+}
+
 int main(int argc, char *argv[])
 {
-	const char *usage =
-	    "usage: git credential-wincred <get|store|erase>\n";
+	char *type = NULL;
+	const char *action;
+	const char* usage = "usage: git-credential-wincred [--type=session]|[-s] <get|store|erase>\n";
+	char** tokens;
 
-	if (!argv[1])
+	/* min length is 2, max length is 4.*/
+	if ((argc < 2) || (argc > 3)) {
 		die(usage);
+	}
+
+	// the last one is <get|store|erase>
+	action = argv[argc - 1];
+
+	if (3 == argc) {
+		/* argv[1] is [--type=session]|[-s] */
+		char* option = argv[1];
+
+		if (strchr(option, '=')) {
+			tokens = split(argv[1], '=');
+			char* key = *(tokens);
+			if (strncmp(key, OPTION_KEY, strlen(key))) {
+				die(usage);
+			}
+			char* value = *(tokens + 1);
+			if (strncmp(value, PERSIST_SESSION, strlen(value))) {
+				die(usage);
+			}
+			if (value != NULL) {
+				type = value;
+			}
+		} else {
+			if (strncmp(option, PERSIST_SESSION_SHORT, strlen(option))) {
+				die(usage);
+			}
+			type = option;
+		}
+	}
 
 	/* git use binary pipes to avoid CRLF-issues */
 	_setmode(_fileno(stdin), _O_BINARY);
@@ -296,11 +388,11 @@ int main(int argc, char *argv[])
 		wcsncat(target, path, ARRAY_SIZE(target));
 	}
 
-	if (!strcmp(argv[1], "get"))
+	if (!strcmp(action, "get"))
 		get_credential();
-	else if (!strcmp(argv[1], "store"))
-		store_credential();
-	else if (!strcmp(argv[1], "erase"))
+	else if (!strcmp(action, "store"))
+		store_credential(type);
+	else if (!strcmp(action, "erase"))
 		erase_credential();
 	/* otherwise, ignore unknown action */
 	return 0;
