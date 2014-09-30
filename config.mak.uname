@@ -14,6 +14,11 @@ ifdef MSVC
 	uname_O := Windows
 endif
 
+ifneq (,$(findstring mingw,$(CC_MACH)))
+	uname_S := MINGW
+	uname_O := MINGW
+endif
+
 # We choose to avoid "if .. else if .. else .. endif endif"
 # because maintaining the nesting to match is a pain.  If
 # we had "elif" things would have been much nicer...
