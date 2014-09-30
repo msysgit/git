@@ -1964,11 +1964,11 @@ static struct delta_base_cache_entry {
 	enum object_type type;
 } delta_base_cache[MAX_DELTA_CACHE];
 
-static unsigned long pack_entry_hash(struct packed_git *p, off_t base_offset)
+static uintptr_t pack_entry_hash(struct packed_git *p, off_t base_offset)
 {
-	unsigned long hash;
+	uintptr_t hash;
 
-	hash = (unsigned long)p + (unsigned long)base_offset;
+	hash = (uintptr_t)p + base_offset;
 	hash += (hash >> 8) + (hash >> 16);
 	return hash % MAX_DELTA_CACHE;
 }
@@ -1976,7 +1976,7 @@ static unsigned long pack_entry_hash(struct packed_git *p, off_t base_offset)
 static struct delta_base_cache_entry *
 get_delta_base_cache_entry(struct packed_git *p, off_t base_offset)
 {
-	unsigned long hash = pack_entry_hash(p, base_offset);
+	uintptr_t hash = pack_entry_hash(p, base_offset);
 	return delta_base_cache + hash;
 }
 
