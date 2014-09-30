@@ -15,6 +15,8 @@
 #define strtoull     _strtoui64
 #define strtoll      _strtoi64
 
+typedef int pid_t;
+
 static __inline int strcasecmp (const char *s1, const char *s2)
 {
 	int size1 = strlen(s1);
