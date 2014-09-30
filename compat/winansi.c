@@ -22,7 +22,7 @@ static int non_ascii_used = 0;
 static HANDLE hthread, hread, hwrite;
 static HANDLE hconsole1, hconsole2;
 
-#ifdef __MINGW32__
+#if defined(__MINGW32__) && !defined(__MINGW64_VERSION_MAJOR)
 typedef struct _CONSOLE_FONT_INFOEX {
 	ULONG cbSize;
 	DWORD nFont;
