@@ -512,7 +512,6 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 	unsigned char sha1[20];
 	char  system_cp[25];
 	const char *name = NULL;
-	const char *encoding=NULL;
 
 	if (argc > 1 && !strcmp("--parseopt", argv[1]))
 		return cmd_parseopt(argc - 1, argv + 1, prefix);
@@ -714,20 +713,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 					work_tree = reencode_string(work_tree,system_cp,"UTF-8");
 					puts(work_tree);
 #else
-					encoding = getenv("LC_ALL");
-					if (encoding == NULL || encoding[0] == '\0') {
-						encoding = getenv("LC_CTYPE");
-					}
-					if (encoding == NULL || encoding[0] == '\0') {
-						encoding = getenv("LANG");
-					}
-					if (encoding == NULL || encoding[0] == '\0') {
-						encoding = NULL;
-					}
-					if ( encoding != NULL ) {
-						work_tree = reencode_string(work_tree,encoding,"UTF-8");
-					}
-					puts(work_tree);
+			        puts(work_tree);
 #endif
 				}
 				continue;
