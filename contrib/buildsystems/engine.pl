@@ -74,6 +74,8 @@ EOM
 
 # Pipe a make --dry-run into a variable, if not already loaded from file
 # Capture the make dry stderr to file for review (will be empty for a release build).
+
+#@makedry = `cd $git_dir && make -n MSVC=1 NO_PERL=1 V=1 1>makedry.txt 2>msvc-build-makedryerrors.txt`; # capture the dry run as a text file
 @makedry = `cd $git_dir && make -n MSVC=1 NO_PERL=1 V=1 2>msvc-build-makedryerrors.txt` if !@makedry;
 # test for an empty msvc-build-makedryerrors.txt file and remove it
 #system("if test ! -s msvc-build-makedryerrors.txt; then rm msvc-build-makedryerrors.txt fi;");
