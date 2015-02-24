@@ -543,13 +543,16 @@ proc git {args} {
 		set args [lrange $args 1 end]
 	}
 
-	set cmdp [_git_cmd [lindex $args 0]]
+	set cmdname  [lindex $args 0]
+	set cmdp [_git_cmd $cmdname]
 	set args [lrange $args 1 end]
 
 	_trace_exec [concat $opt $cmdp $args]
-	set result [eval exec $opt $cmdp $args]
-	if {[encoding system] != "utf-8"} {
-		set result [encoding convertfrom utf-8 [encoding convertto $result]]
+	set result [eval exec $opt $cmdp $args] 
+	if {[encoding system] != "utf-8"} {	  
+	  if { ! ($cmdname == "rev-parse" && [lindex $args 0] == "--show-toplevel") }  {	  	
+	  	set result [encoding convertfrom utf-8 [encoding convertto $result]]
+	  } 
 	}
 	if {$::_trace} {
 		puts stderr "< $result"
