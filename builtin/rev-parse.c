@@ -13,7 +13,7 @@
 #include "revision.h"
 #include "split-index.h"
 #include "utf8.h"
-#include "winnt.h"
+#include "../git-compat-util.h"
 
 #define DO_REVS		1
 #define DO_NOREV	2
@@ -512,6 +512,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 	unsigned char sha1[20];
 	char  system_cp[25];
 	const char *name = NULL;
+	const char *encoding=NULL;
 
 	if (argc > 1 && !strcmp("--parseopt", argv[1]))
 		return cmd_parseopt(argc - 1, argv + 1, prefix);
@@ -708,9 +709,26 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 			if (!strcmp(arg, "--show-toplevel")) {
 				const char *work_tree = get_git_work_tree();
 				if (work_tree){
+#ifdef GIT_WINDOWS_NATIVE
 					sprintf(system_cp, "cp%d", GetACP());
 					work_tree = reencode_string(work_tree,system_cp,"UTF-8");
 					puts(work_tree);
+#else
+					encoding = getenv("LC_ALL");
+					if (encoding == NULL || encoding[0] == '\0') {
+						encoding = getenv("LC_CTYPE");
+					}
+					if (encoding == NULL || encoding[0] == '\0') {
+						encoding = getenv("LANG");
+					}
+					if (encoding == NULL || encoding[0] == '\0') {
+						encoding = NULL;
+					}
+					if ( encoding != NULL ) {
+						work_tree = reencode_string(work_tree,encoding,"UTF-8");
+					}
+					puts(work_tree);
+#endif
 				}
 				continue;
 			}
