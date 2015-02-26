@@ -13,8 +13,6 @@
 #include "revision.h"
 #include "split-index.h"
 #include "utf8.h"
-#include "../git-compat-util.h"
-
 #define DO_REVS		1
 #define DO_NOREV	2
 #define DO_FLAGS	4
@@ -708,13 +706,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 			if (!strcmp(arg, "--show-toplevel")) {
 				const char *work_tree = get_git_work_tree();
 				if (work_tree){
-#ifdef GIT_WINDOWS_NATIVE
-					sprintf(system_cp, "cp%d", GetACP());
-					work_tree = reencode_string(work_tree,system_cp,"UTF-8");
-					puts(work_tree);
-#else
 			        puts(work_tree);
-#endif
 				}
 				continue;
 			}
