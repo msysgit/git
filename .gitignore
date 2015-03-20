@@ -175,6 +175,7 @@
 /gitweb/gitweb.cgi
 /gitweb/static/gitweb.js
 /gitweb/static/gitweb.min.*
+/libgit
 /test-chmtime
 /test-ctype
 /test-date
@@ -182,6 +183,7 @@
 /test-dump-cache-tree
 /test-scrap-cache-tree
 /test-genrandom
+/test-hashmap
 /test-index-version
 /test-line-buffer
 /test-match-trees
@@ -202,6 +204,8 @@
 /test-urlmatch-normalization
 /test-wildmatch
 /common-cmds.h
+/vcs-svn_lib
+/xdiff_lib
 *.tar.gz
 *.dsc
 *.deb
@@ -238,5 +242,6 @@
 *.user
 *.idb
 *.pdb
-/Debug/
-/Release/
+*.manifest
+**/Debug/
+**/Release/
