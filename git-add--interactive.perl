@@ -175,8 +175,32 @@ sub run_cmd_pipe {
 		my @args = map { m/ /o ? "\"$_\"": $_ } @_;
 		return qx{@args};
 	} else {
+	
+		# 2014-08-07 - Phil - Write filename args to a temporary file
+		my @myArgs = @_;
+		my $cmd = "@myArgs";
+		my $path = "$ENV{APPDATA}";
+		$path =~ s/\\/\//g;
+		use File::Temp qw(tempfile);
+		my ($fhargs, $filename) = tempfile("$path/git-args-XXXXXX", UNLINK => 1);
+		if (grep $_ eq "--", @myArgs) {
+			$cmd = "";
+			while ($myArgs[0] ne '--') {
+				$cmd = $cmd . shift(@myArgs) . " ";
+			}
+			$cmd = $cmd . "-- ";
+			shift(@myArgs);
+			
+			foreach (@myArgs) {
+				print $fhargs "$_ ";
+			}
+			$fhargs->flush;
+			$cmd = $cmd . "< $filename";
+		}
+ 
 		my $fh = undef;
-		open($fh, '-|', @_) or die;
+		open($fh, '-|', $cmd) or die;
+		close $fhargs;
 		return <$fh>;
 	}
 }
