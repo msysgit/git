@@ -177,6 +177,48 @@ sub run_cmd_pipe {
 		die "$^O does not support: @invalid\n" if @invalid;
 		my @args = map { m/ /o ? "\"$_\"": $_ } @_;
 		return qx{@args};
+	} elsif (($^O eq 'MSWin32' || $^O eq 'msys') && (scalar @_ > 200)) {
+
+		# workaround for https://github.com/msysgit/git/issues/182
+		# mostly the work of @PhilipDavis, circa 2014-08-07
+
+		my @myArgs = @_;
+		my $cmd = "@myArgs";
+		my $path = "$ENV{APPDATA}";
+		$path =~ s/\\/\//g;
+
+		use File::Temp qw(tempfile);
+		# for troubleshooting, you might find it useful to eliminate the UNLINK setting:
+		my ($fhargs, $filename) = tempfile("$path/git-args-XXXXXX", UNLINK => 1);
+
+		if (grep $_ eq "--", @myArgs) {
+
+			$cmd = "";
+			while ($myArgs[0] ne '--') {
+				$cmd = $cmd . shift(@myArgs) . " ";
+			}
+
+			$cmd = $cmd . "-- ";
+			shift(@myArgs);
+
+			foreach (@myArgs) {
+				# if files have whitespace in the name, quotes around $_ are mandatory:
+				print $fhargs "\"$_\"  \n";
+			}
+
+			$fhargs->flush;
+
+			# 2015 may 26: @kkheller using cat to xargs instead of "< $filename"
+			$cmd = "cat $filename | xargs -s 20000 " . $cmd;
+		}
+
+		print "$filename\n";
+		print "$cmd \n\n";
+
+		my $fh = undef;
+		open($fh, '-|', $cmd) or die;
+		return <$fh>;
+
 	} else {
 		my $fh = undef;
 		open($fh, '-|', @_) or die;
