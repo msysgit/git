@@ -187,11 +187,10 @@ sub run_cmd_pipe {
 		my $path = "$ENV{APPDATA}";
 		$path =~ s/\\/\//g;
 
-		use File::Temp qw(tempfile);
-		# for troubleshooting, you might find it useful to eliminate the UNLINK setting:
-		my ($fhargs, $filename) = tempfile("$path/git-args-XXXXXX", UNLINK => 1);
-
 		if (grep $_ eq "--", @myArgs) {
+			use File::Temp qw(tempfile);
+			# for troubleshooting, you might find it useful to eliminate the UNLINK setting:
+			my ($fhargs, $filename) = tempfile("$path/git-args-XXXXXX", UNLINK => 1);
 
 			$cmd = "";
 			while ($myArgs[0] ne '--') {
@@ -207,13 +206,11 @@ sub run_cmd_pipe {
 			}
 
 			$fhargs->flush;
+			close($fhargs);
 
 			# 2015 may 26: @kkheller using cat to xargs instead of "< $filename"
 			$cmd = "cat $filename | xargs -s 20000 " . $cmd;
 		}
-
-		print "$filename\n";
-		print "$cmd \n\n";
 
 		my $fh = undef;
 		open($fh, '-|', $cmd) or die;
