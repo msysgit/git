@@ -201,15 +201,14 @@ sub run_cmd_pipe {
 			shift(@myArgs);
 
 			foreach (@myArgs) {
-				# if files have whitespace in the name, quotes around $_ are mandatory:
-				print $fhargs "\"$_\"  \n";
+				print $fhargs "$_" . "\0";
 			}
 
 			$fhargs->flush;
 			close($fhargs);
 
 			# 2015 may 26: @kkheller using cat to xargs instead of "< $filename"
-			$cmd = "cat $filename | xargs -s 20000 " . $cmd;
+			$cmd = "cat $filename | xargs -0 -s 20000 " . $cmd;
 		}
 
 		my $fh = undef;
