@@ -38,9 +38,9 @@ struct fsentry {
 		struct {
 			/* More stat members (only used for file entries). */
 			off64_t st_size;
-			time_t st_atime;
-			time_t st_mtime;
-			time_t st_ctime;
+			struct timespec st_atim;
+			struct timespec st_mtim;
+			struct timespec st_ctim;
 		};
 	};
 };
@@ -150,9 +150,9 @@ static struct fsentry *fseentry_create_entry(struct fsentry *list,
 	fse->st_mode = file_attr_to_st_mode(fdata->dwFileAttributes);
 	fse->st_size = (((off64_t) (fdata->nFileSizeHigh)) << 32)
 			| fdata->nFileSizeLow;
-	fse->st_atime = filetime_to_time_t(&(fdata->ftLastAccessTime));
-	fse->st_mtime = filetime_to_time_t(&(fdata->ftLastWriteTime));
-	fse->st_ctime = filetime_to_time_t(&(fdata->ftCreationTime));
+	filetime_to_timespec(&(fdata->ftLastAccessTime), &(fse->st_atim));
+	filetime_to_timespec(&(fdata->ftLastWriteTime), &(fse->st_mtim));
+	filetime_to_timespec(&(fdata->ftCreationTime), &(fse->st_ctim));
 
 	return fse;
 }
