@@ -342,6 +342,11 @@ all::
 # return NULL when it receives a bogus time_t.
 #
 # Define HAVE_CLOCK_GETTIME if your platform has clock_gettime in librt.
+#
+# Define CROSS_COMPILE=foo- if your compiler and binary utilities
+# are foo-cc, foo-ar, foo-strip, etc.  More specific variables
+# override this, so if you set CC=gcc CROSS_COMPILE=ia64-linux-gnu-
+# then the compiler will be 'gcc', not 'ia64-linux-gnu-gcc'.
 
 GIT-VERSION-FILE: FORCE
 	@$(SHELL_PATH) ./GIT-VERSION-GEN
@@ -353,7 +358,6 @@ CFLAGS = -g -O2 -Wall
 LDFLAGS =
 ALL_CFLAGS = $(CPPFLAGS) $(CFLAGS)
 ALL_LDFLAGS = $(LDFLAGS)
-STRIP ?= strip
 
 # Among the variables below, these:
 #   gitexecdir
@@ -393,8 +397,12 @@ htmldir_relative = $(patsubst $(prefix)/%,%,$(htmldir))
 
 export prefix bindir sharedir sysconfdir gitwebdir localedir
 
-CC = cc
-AR = ar
+AR = $(CROSS_COMPILE)ar
+CC = $(CROSS_COMPILE)cc
+GCOV = $(CROSS_COMPILE)gcov
+RC = $(CROSS_COMPILE)windres
+STRIP = $(CROSS_COMPILE)strip
+
 RM = rm -f
 DIFF = diff
 TAR = tar
@@ -407,13 +415,12 @@ XGETTEXT = xgettext
 MSGFMT = msgfmt
 PTHREAD_LIBS = -lpthread
 PTHREAD_CFLAGS =
-GCOV = gcov
 
 export TCL_PATH TCLTK_PATH
 
 SPARSE_FLAGS =
 
-
+RCFLAGS =
 
 ### --- END CONFIGURATION SECTION ---
 
@@ -1794,7 +1801,7 @@ $(SCRIPT_LIB) : % : %.sh GIT-SCRIPT-DEFINES
 	mv $@+ $@
 
 git.res: git.rc GIT-VERSION-FILE
-	$(QUIET_RC)$(RC) \
+	$(QUIET_RC)$(RC) $(RCFLAGS) \
 	  $(join -DMAJOR= -DMINOR=, $(wordlist 1,2,$(subst -, ,$(subst ., ,$(GIT_VERSION))))) \
 	  -DGIT_VERSION="\\\"$(GIT_VERSION)\\\"" $< -o $@
 
