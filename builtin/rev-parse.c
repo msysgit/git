@@ -12,7 +12,7 @@
 #include "diff.h"
 #include "revision.h"
 #include "split-index.h"
-
+#include "utf8.h"
 #define DO_REVS		1
 #define DO_NOREV	2
 #define DO_FLAGS	4
@@ -508,6 +508,7 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 	int has_dashdash = 0;
 	int output_prefix = 0;
 	unsigned char sha1[20];
+	char  system_cp[25];
 	const char *name = NULL;
 
 	if (argc > 1 && !strcmp("--parseopt", argv[1]))
@@ -704,8 +705,9 @@ int cmd_rev_parse(int argc, const char **argv, const char *prefix)
 			}
 			if (!strcmp(arg, "--show-toplevel")) {
 				const char *work_tree = get_git_work_tree();
-				if (work_tree)
-					puts(work_tree);
+				if (work_tree){
+			        puts(work_tree);
+				}
 				continue;
 			}
 			if (!strcmp(arg, "--show-prefix")) {
