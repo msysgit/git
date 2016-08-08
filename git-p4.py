@@ -845,6 +845,7 @@ class Command:
         self.usage = "usage: %prog [options]"
         self.needsGit = True
         self.verbose = False
+        self.isWindows = (platform.system() == "Windows")
 
 class P4UserMap:
     def __init__(self):
@@ -1008,7 +1009,6 @@ class P4Submit(Command, P4UserMap):
         self.dry_run = False
         self.prepare_p4_only = False
         self.conflict_behavior = None
-        self.isWindows = (platform.system() == "Windows")
         self.exportLabels = False
         self.p4HasMoveCommand = p4_has_move_command()
         self.branch = None
@@ -3142,6 +3142,8 @@ class P4Clone(P4Sync):
 
         self.cloneExclude = ["/"+p for p in self.cloneExclude]
         for p in depotPaths:
+            if self.isWindows and p.startswith("/") and not "/" in p[1:]:
+	        p = "/"+p
             if not p.startswith("//"):
                 sys.stderr.write('Depot paths must start with "//": %s\n' % p)
                 return False
