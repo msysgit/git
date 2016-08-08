@@ -52,6 +52,37 @@ extern int pthread_cond_signal(pthread_cond_t *cond);
 extern int pthread_cond_broadcast(pthread_cond_t *cond);
 
 /*
+ * Implement basic read-write lock for Windows threads.
+ */
+typedef struct {
+	/* Number of readers holding lock; -1 means a writer holds the lock. */
+	LONG readers;
+
+	/* Number of readers waiting to acquire lock. */
+	LONG waiting_readers;
+
+	/* Number of writers waiting to acquire lock. */
+	LONG waiting_writers;
+
+	/* Mutex for readers, waiting_readers, and waiting_writers. */
+	CRITICAL_SECTION count_lock;
+
+	/* Semaphore for alerting waiting readers. */
+	HANDLE reader_sema;
+
+	/* Semaphore for alerting waiting writers. */
+	HANDLE writer_sema;
+} pthread_rwlock_t;
+
+extern int pthread_rwlock_init(pthread_rwlock_t *rwlock);
+extern int pthread_rwlock_destroy(pthread_rwlock_t *rwlock);
+extern int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock);
+extern int pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock);
+extern int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
+extern int pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock);
+extern int pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
+
+/*
  * Simple thread creation implementation using pthread API
  */
 typedef struct {

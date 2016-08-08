@@ -194,3 +194,105 @@ int pthread_cond_broadcast(pthread_cond_t *cond)
 	}
 	return 0;
 }
+
+int pthread_rwlock_init(pthread_rwlock_t *rwlock)
+{
+	rwlock->readers = rwlock->waiting_readers = rwlock->waiting_writers = 0;
+	InitializeCriticalSection(&rwlock->count_lock);
+	rwlock->reader_sema = CreateSemaphore(NULL, 0, LONG_MAX, NULL);
+	rwlock->writer_sema = CreateSemaphore(NULL, 0, LONG_MAX, NULL);
+}
+
+int pthread_rwlock_destroy(pthread_rwlock_t *rwlock)
+{
+	DeleteCriticalSection(&rwlock->count_lock);
+	CloseHandle(rwlock->reader_sema);
+	CloseHandle(rwlock->writer_sema);
+}
+
+int pthread_rwlock_rdlock(pthread_rwlock_t *rwlock)
+{
+	EnterCriticalSection(&rwlock->count_lock);
+	rwlock->waiting_readers++;
+
+	while (rwlock->readers < 0) {
+		LeaveCriticalSection(&rwlock->count_lock);
+		WaitForSingleObject(rwlock->reader_sema, INFINITE);
+		EnterCriticalSection(&rwlock->count_lock);
+	}
+
+	rwlock->waiting_readers--;
+	rwlock->readers++;
+	LeaveCriticalSection(&rwlock->count_lock);
+	return 0;
+}
+
+int pthread_rwlock_tryrdlock(pthread_rwlock_t *rwlock)
+{
+	int res = 0;
+
+	EnterCriticalSection(&rwlock->count_lock);
+	if (rwlock->readers >= 0)
+		rwlock->readers++;
+	else
+		res = EBUSY;
+	LeaveCriticalSection(&rwlock->count_lock);
+	return res;
+}
+
+int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock)
+{
+	EnterCriticalSection(&rwlock->count_lock);
+	rwlock->waiting_writers++;
+
+	while (rwlock->readers != 0) {
+		LeaveCriticalSection(&rwlock->count_lock);
+		WaitForSingleObject(rwlock->writer_sema, INFINITE);
+		EnterCriticalSection(&rwlock->count_lock);
+	}
+
+	rwlock->waiting_writers--;
+	rwlock->readers--;
+	LeaveCriticalSection(&rwlock->count_lock);
+	return 0;
+}
+
+int pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock)
+{
+	int res = 0;
+
+	EnterCriticalSection(&rwlock->count_lock);
+	if (rwlock->readers == 0)
+		rwlock->readers--;
+	else
+		res = EBUSY;
+	LeaveCriticalSection(&rwlock->count_lock);
+	return res;
+}
+
+int pthread_rwlock_unlock(pthread_rwlock_t *rwlock)
+{
+	int res = 0;
+
+	EnterCriticalSection(&rwlock->count_lock);
+
+	if (rwlock->readers < 0)
+		rwlock->readers++;
+	else if (rwlock->readers > 0)
+		rwlock->readers--;
+	else
+		res = EINVAL;
+
+	if (rwlock->readers == 0) {
+		/* Waiting writers get priority over waiting readers. */
+		if (rwlock->waiting_writers > 0)
+			ReleaseSemaphore(rwlock->writer_sema, 1, NULL);
+		else if (rwlock->waiting_readers > 0)
+			ReleaseSemaphore(rwlock->reader_sema,
+					 rwlock->waiting_readers,
+					 NULL);
+	}
+
+	LeaveCriticalSection(&rwlock->count_lock);
+	return res;
+}
